@@ -347,8 +347,16 @@ function pitchOf(x, rate) {
   }
   let best = -1, bl = 0;
   for (let L = lo + 1; L <= hi; L++) if (r[L] > r[L - 1] && r[L] >= r[L + 1] && r[L] > best) { best = r[L]; bl = L; }
-  // prefer the shortest lag that is nearly as good (avoids octave errors)
-  for (let L = lo + 1; L <= hi; L++) if (r[L] > r[L - 1] && r[L] >= r[L + 1] && r[L] > 0.9 * best) { bl = L; break; }
+  // prefer the shortest lag that is nearly as good (avoids reading an octave low), but only if it is a real
+  // period: its multiples must line up too. A strong harmonic near fR1 can make a quarter or a half of
+  // the period look good on its own, which would read two octaves or one octave high.
+  const peakNear = (c) => { let m = -1; for (let j = Math.max(lo, Math.floor(c) - 2); j <= Math.min(hi + 1, Math.ceil(c) + 2); j++) m = Math.max(m, r[j]); return m; };
+  for (let L = lo + 1; L < bl; L++) {
+    if (!(r[L] > r[L - 1] && r[L] >= r[L + 1] && r[L] > 0.9 * best)) continue;
+    let ok = true;
+    for (let k = 2; k * L <= hi; k++) if (peakNear(k * L) < 0.8 * best) { ok = false; break; }
+    if (ok) { bl = L; break; }
+  }
   if (!bl) return { f0: 0, conf: 0 };
   const a = r[bl - 1], b = r[bl], c = r[bl + 1], d = (a - c) / (2 * (a - 2 * b + c) || 1);
   return { f0: rate / (bl + Math.max(-0.5, Math.min(0.5, d))), conf: r[bl] };
@@ -725,6 +733,7 @@ let cur = null;             // latest result shown
 let trail = [];             // { t, f0, f1, label }
 const TRAIL_S = 30;
 let recentF1 = [];          // a few recent fR1 readings, for a steadier display
+let pendingJump = 0;        // a big pitch jump waiting for a second reading to confirm it
 
 /* ===================== Analysis engine (Web Worker, with a fallback on the page) ===================== */
 const DSP_SRC = document.getElementById("dsp-src").textContent;
@@ -839,6 +848,11 @@ function onResult(r) {
   if (r.level > 0.98) statusEl.textContent = "Clipping. Back off the mic or turn the input down.";
   if (!r.f0 || r.conf < 0.6 || !r.fr) { if (r.level <= 0.98) statusEl.textContent = "Listening for a steady pitch…"; recentF1 = []; markStale(); return; }
   if (r.level <= 0.98) statusEl.textContent = "";
+  // a sudden jump of more than half an octave is checked against the next reading before it is believed
+  if (cur && !cur.stale && Math.abs(midiOf(r.f0) - midiOf(cur.f0)) > 6.5) {
+    if (!pendingJump || Math.abs(midiOf(r.f0) - midiOf(pendingJump)) > 1) { pendingJump = r.f0; return; }
+  }
+  pendingJump = 0;
   // steady the display: median of the last few fR1 readings while the pitch stays put
   if (cur && cur.f0 && Math.abs(midiOf(r.f0) - midiOf(cur.f0)) > 0.7) recentF1 = [];
   recentF1.push(r.fr[0].f); if (recentF1.length > 3) recentF1.shift();
