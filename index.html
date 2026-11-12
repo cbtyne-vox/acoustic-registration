@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acoustic Registration Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Music&display=swap" rel="stylesheet">
+<style>
+/* Layout: displays on the left, controls on the right; stacks on narrow screens. */
+:root {
+  --bg: #f3f4f6;
+  --panel: #ffffff;
+  --ink: #1b1f27;
+  --muted: #5d6573;
+  --line: #d9dce3;
+  --accent: #1f6fb2;
+  --scope-bg: #0f141c;
+  --scope-ink: #c9d3e0;
+  --scope-grid: #233042;
+  --curve: #4aa3ff;
+  --h1: #ff9f43;
+  --h2: #c084fc;
+  --hn: #9fb0c6;
+  --open: #f2c230;
+  --close: #3b82f6;
+  --whoop: #9b5de5;
+  --over: #e05d5d;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c;
+    --panel: #181e27;
+    --ink: #e6eaf0;
+    --muted: #97a1b0;
+    --line: #2a3340;
+    --accent: #5aa9ef;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c;
+  --panel: #181e27;
+  --ink: #e6eaf0;
+  --muted: #97a1b0;
+  --line: #2a3340;
+  --accent: #5aa9ef;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.45;
+}
+.wrap { max-width: 1280px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
+h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0; font-size: 14px; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
+@media (max-width: 960px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.panel h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0; }
+.displays { display: flex; flex-direction: column; gap: 14px; }
+
+/* readout */
+.readout { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 700px) { .readout { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tile .k { font-size: 12px; color: var(--muted); }
+.tile .v { font-family: var(--font-mono); font-size: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tile .s { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.phone-note { display: none; margin: 6px 0 0; }
+@media (hover: none) and (pointer: coarse) { .phone-note { display: block; } }
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px; font-weight: 600; font-size: 17px; color: #10131a; width: fit-content; }
+.pill.open { background: var(--open); }
+.pill.close { background: var(--close); color: #fff; }
+.pill.whoop { background: var(--whoop); color: #fff; }
+.pill.over { background: var(--over); color: #fff; }
+
+.scopewrap { background: var(--scope-bg); border-radius: 8px; padding: 6px; }
+canvas { display: block; width: 100%; }
+#spec { height: 260px; }
+#staff { height: 290px; min-width: 620px; }
+.staffwrap { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; overflow-x: auto; }
+.kbdscroll { background: var(--scope-bg); border-radius: 8px; padding: 6px; overflow-x: auto; }
+#kbd { height: 300px; min-width: 980px; touch-action: none; cursor: pointer; }
+#wave { height: 170px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.rules { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 700px) { .rules { grid-template-columns: minmax(0, 1fr); } }
+.rule { border-left: 4px solid var(--line); padding: 2px 0 2px 10px; font-size: 13.5px; }
+.rule b { display: block; font-size: 14px; }
+.rule.open { border-color: var(--open); }
+.rule.close { border-color: var(--close); }
+.rule.whoop { border-color: var(--whoop); }
+
+/* controls */
+.controls { display: flex; flex-direction: column; gap: 14px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field .lab { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); }
+.field .lab output { font-family: var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+button, select {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 7px; padding: 6px 11px; cursor: pointer;
+}
+button:hover, select:hover { border-color: var(--accent); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+#play { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding: 8px 18px; font-size: 15px; }
+#play.on { background: #c0392b; border-color: #c0392b; }
+.vowels button { font-family: var(--font-mono); min-width: 44px; font-size: 16px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.note { font-size: 12.5px; color: var(--muted); margin: 0; }
+.check { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
+details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+details .field { margin-top: 8px; }
+.keys { font-size: 12.5px; color: var(--muted); }
+.keys kbd { font-family: var(--font-mono); font-size: 11.5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--bg); color: var(--ink); }
+#status { font-size: 13px; color: var(--muted); min-height: 1.2em; }
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Vowel Synth Lab</h1>
+    <p class="sub">A glottal source through five vocal-tract resonances. Move pitch and vowel and watch H1 and H2 cross fR1.</p>
+  </header>
+
+  <section class="panel" aria-label="Keyboard">
+    <div class="row" style="justify-content: space-between;">
+      <div class="row" style="gap: 12px;"><h2>Keyboard: harmonics and resonances</h2><span class="pill open" id="k-timbre">Open</span><span class="note" id="k-ratio"></span></div>
+      <span class="note">Click or drag across the keys to sing a pitch. Drag the fR1 or fR2 handle to move a resonance.</span>
+/* Acoustic Registration Lab additions */
+.pill.none { background: var(--line); color: var(--muted); }
+.now { display: grid; grid-template-columns: minmax(220px, auto) minmax(0, 1fr); gap: 18px; align-items: center; }
+@media (max-width: 760px) { .now { grid-template-columns: minmax(0, 1fr); } }
+.bigwrap { display: flex; flex-direction: column; gap: 6px; }
+.big { font-size: 40px; padding: 8px 26px; letter-spacing: -0.01em; }
+.big.stale { opacity: 0.45; }
+#border-note { font-size: 13.5px; color: var(--muted); min-height: 1.3em; }
+.now .readout { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 700px) { .now .readout { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+#trail { height: 260px; }
+#flow { height: 160px; }
+#ring { height: 200px; }
+#go { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding: 8px 18px; font-size: 15px; }
+#go.on { background: #c0392b; border-color: #c0392b; }
+.warn { font-size: 13px; border-left: 4px solid var(--over); padding: 4px 0 4px 10px; margin: 0; }
+.rule.over { border-color: var(--over); }
+.rules4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .rules4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+details.panel > summary { list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary h2::before { content: "▸ "; }
+details.panel[open] > summary h2::before { content: "▾ "; }
+details.panel[open] > summary { margin-bottom: 12px; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Acoustic Registration Lab</h1>
+    <p class="sub">Sing a steady vowel. See where your first resonance (fR1) sits against the note you're singing and the octave above it.</p>
+  </header>
+
+  <section class="panel" aria-label="What's happening now">
+    <div class="now">
+      <div class="bigwrap">
+        <span class="pill big none" id="r-label">–</span>
+        <span id="border-note" aria-live="polite"></span>
+      </div>
+      <div class="readout">
+        <div class="tile"><span class="k">Sung pitch (H1)</span><span class="v" id="r-f0">–</span><span class="s" id="r-f0hz">&nbsp;</span></div>
+        <div class="tile"><span class="k">First resonance (fR1)</span><span class="v" id="r-f1">–</span><span class="s" id="r-f1hz">&nbsp;</span></div>
+        <div class="tile"><span class="k">fR1 ÷ fo</span><span class="v" id="r-ratio">–</span><span class="s">ripples per cycle</span></div>
+        <div class="tile"><span class="k">H2 (octave above)</span><span class="v" id="r-h2">–</span><span class="s" id="r-h2hz">&nbsp;</span></div>
+      </div>
+    </div>
+    <p class="warn" id="hi-note" hidden>At this pitch, fR1 can't be measured reliably, by hand or by computer. The harmonics are too far apart to show where the resonance is, so the reading tends to land on a harmonic. Treat the label as a guess.</p>
+  </section>
+
+  <div class="main">
+    <div class="displays">
+      <section class="panel" aria-label="Grand staff">
+        <div class="row" style="justify-content: space-between;">
+          <h2>Grand staff: your harmonics and fR1</h2>
+          <span class="note">Each harmonic is written at its nearest note. The blue line is where fR1 sits.</span>
+        </div>
+        <div class="staffwrap"><canvas id="staff" aria-label="Grand staff showing the sung harmonics as notes and fR1 and fR2 as lines"></canvas></div>
+      </section>
+
+      <section class="panel" aria-label="Keyboard">
+        <div class="row" style="justify-content: space-between;">
+          <h2>Keyboard: harmonics and resonances</h2>
+          <span class="note">Bars are your harmonics as measured. The curve is the resonance shape the analysis found.</span>
+        </div>
+        <div class="kbdscroll"><canvas id="kbd" aria-label="Keyboard with the measured harmonics and resonances"></canvas></div>
+        <div class="legend">
+          <span><i class="sw" style="background: var(--h1)"></i>H1 (the sung pitch)</span>
+          <span><i class="sw" style="background: var(--h2)"></i>H2 (octave above)</span>
+          <span><i class="sw" style="background: var(--hn)"></i>H3 and up</span>
+          <span><i class="sw" style="background: var(--curve)"></i>resonances found (fR1 key outlined)</span>
+        </div>
+      </section>
+
+      <section class="panel" aria-label="Trail">
+        <div class="row" style="justify-content: space-between;">
+          <h2>Trail: the last 30 seconds</h2>
+          <span class="note">Sing a scale and watch where H2 and H1 cross fR1. The shading is the label at each moment.</span>
+        </div>
+        <div class="scopewrap"><canvas id="trail" aria-label="The last 30 seconds of sung pitch, H2 and fR1, shaded by label"></canvas></div>
+        <div class="legend">
+          <span><i class="sw" style="background: var(--h1)"></i>H1</span>
+          <span><i class="sw" style="background: var(--h2)"></i>H2</span>
+          <span><i class="sw" style="background: var(--curve)"></i>fR1</span>
+          <span><i class="sw" style="background: var(--open)"></i>open</span>
+          <span><i class="sw" style="background: var(--close)"></i>close</span>
+          <span><i class="sw" style="background: var(--whoop)"></i>whoop</span>
+          <span><i class="sw" style="background: var(--over)"></i>H1 above fR1</span>
+        </div>
+      </section>
+
+      <details class="panel" id="flow-panel" open aria-label="Ripples and glottal flow">
+        <summary><h2>Ripples and glottal flow</h2><span class="note">Three cycles of your voice, closures marked.</span></summary>
+        <p class="note">Your sound, filtered to keep fR1's ringing. Each closure sets fR1 ringing; count the ripples between closures.</p>
+        <div class="scopewrap"><canvas id="ring" aria-label="The sung sound filtered around fR1, three cycles, showing the ripples"></canvas></div>
+        <p class="note" style="margin-top: 10px;">Glottal flow: the same cycles with the resonances taken out. The flat stretches are the closed phase; the humps are the folds opening.</p>
+        <div class="scopewrap"><canvas id="flow" aria-label="Estimated glottal flow over three cycles"></canvas></div>
+        <div class="rules rules4" style="margin-top: 12px;">
+          <div class="rule whoop"><b>Whoop</b>fR1 near fo. About 1 ripple per cycle.</div>
+          <div class="rule close"><b>Close</b>fR1 between fo and 2fo. About 1.5 ripples.</div>
+          <div class="rule open"><b>Open</b>fR1 at or above 2fo. 2 or more ripples.</div>
+          <div class="rule over"><b>H1 above fR1</b>fR1 below the sung pitch. Less than 1 ripple.</div>
+        </div>
+        <p class="note" style="margin-top: 10px;">Each closure is a tap that sets the tract ringing at fR1, so the number of ripples per cycle is fR1 ÷ fo. The ripples fade as they go, and the next closure starts them again.</p>
+      </details>
+    </div>
+
+    <aside class="panel controls" aria-label="Controls">
+      <div class="field">
+        <span class="lab">Input</span>
+        <div class="seg" role="group" aria-label="Input source">
+          <button type="button" data-src="mic" aria-pressed="true">Microphone</button>
+          <button type="button" data-src="file" aria-pressed="false">Audio file</button>
+        </div>
+      </div>
+      <div id="mic-ctl" class="field">
+        <p class="note">Sing about a hand's width from the mic. The browser's echo cancelling, noise suppression and auto level are switched off, since they change the sound. Use headphones if anything is playing.</p>
+      </div>
+      <div id="file-ctl" class="field" hidden>
+        <input type="file" id="file" accept="audio/*" aria-label="Choose an audio file">
+        <label class="check"><input type="checkbox" id="monitor" checked> Hear it</label>
+        <p class="note">Plays the file on a loop and reads it as it goes.</p>
+      </div>
+      <div class="row">
+        <button type="button" id="go">Start</button>
+        <button type="button" id="hold" aria-pressed="false">Hold</button>
+        <button type="button" id="clear">Clear trail</button>
+      </div>
+      <div id="status" role="status"></div>
+      <p class="note phone-note">On an iPhone or iPad, switch the ringer on (off silent) to hear a file.</p>
+
+      <div class="field">
+        <span class="lab">How the label is read</span>
+        <p class="note">fR1, H1 and H2 are each rounded to their nearest piano key, the same rule the Vowel Synth Lab uses. Open: fR1 on H2's key or higher. Close: fR1 more than a half step above H1 but below H2. Whoop: fR1 on H1's key or a half step either side. Below that, H1 has passed above fR1.</p>
+        <p class="note">When fR1 is within about a half step of one of those lines, the readout says so. Small changes in vowel or measurement can tip it either way.</p>
+      </div>
+
+      <details>
+        <summary>More settings</summary>
+        <div class="field">
+          <label class="check"><input type="checkbox" id="flip"> Flip polarity</label>
+          <p class="note">The lab works out which way up the signal is from the closures. If the flow looks upside down (sharp rises instead of sharp falls), tick this.</p>
+        </div>
+      </details>
+
+      <div class="field">
+        <span class="lab">What it can measure</span>
+        <p class="note">Reliable from the bass staff up to about B4, for any voice, on a steady note held for a third of a second or more. Above about C5 the harmonics are too far apart to find fR1. Vibrato is fine. Fast runs and slides read only once the pitch settles.</p>
+      </div>
+      <p class="keys"><kbd>Space</kbd> hold or release</p>
+    </aside>
+  </div>
+
+  <section class="panel" aria-label="About">
+    <h2>About</h2>
+    <p class="note">Acoustic Registration Lab was made by Chadley Ballantyne (Stetson University) as the reverse of the Vowel Synth Lab: instead of setting fR1 and hearing the result, you sing and the lab measures fR1 in your own voice. It uses the same closed-phase analysis as the Inverse Filter Lab. It finds each glottal closure, fits a linear predictor only to the stretch of each cycle when the folds are closed and the tract rings on its own, and keeps the fit that leaves the flattest closed phase. The labels open, close and whoop follow Kenneth Bozeman's acoustic registration terms. Built with Claude.</p>
+  </section>
+</div>
+
+<script id="dsp-src" type="text/plain">
+"use strict";
+/* Signal processing for the Acoustic Registration Lab. Runs in a Web Worker so the page stays smooth.
+   Ported from the Inverse Filter Lab (closed-phase covariance estimate of the resonances). */
+let fs = 48000, lastSign = -1;
+const state = { fr: [], lp: 3500, invert: false, lfc: 0 };
+const FR_DEF = [
+  { f: 700, bw: 80, lo: 150, hi: 1300 },
+  { f: 1200, bw: 100, lo: 500, hi: 3000 },
+  { f: 2600, bw: 140, lo: 1500, hi: 3900 },
+  { f: 3400, bw: 180, lo: 2400, hi: 4800 },
+  { f: 4200, bw: 220, lo: 3000, hi: 5600 }
+];
+const CP_STARTS_MS = [0, 0.3, 0.5, 0.8, 1.1], CP_LENS = [0.25, 0.35];
+const CLOSED_A = 0.06, CLOSED_B = 0.25;
+const LP_CACHE = {};
+const setFr = (est) => { state.fr = FR_DEF.map((d, i) => { const e = est[i]; return e ? { f: Math.max(d.lo, Math.min(d.hi, e.f)), bw: Math.max(30, Math.min(500, e.bw)), on: true } : { f: d.f, bw: d.bw, on: true }; }); };
+function decimate(x, D) {
+  if (D <= 1) return Float64Array.from(x);
+  const taps = 63, h = new Float64Array(taps), fc = 0.45 / D, M = (taps - 1) / 2;
+  let s = 0;
+  for (let k = 0; k < taps; k++) {
+    const t = k - M, sinc = t === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * t) / (Math.PI * t);
+    h[k] = sinc * (0.54 - 0.46 * Math.cos(2 * Math.PI * k / (taps - 1))); s += h[k];
+  }
+  const m = Math.floor((x.length - taps) / D), out = new Float64Array(Math.max(0, m));
+  for (let j = 0; j < m; j++) { let v = 0; const o = j * D; for (let k = 0; k < taps; k++) v += h[k] * x[o + k]; out[j] = v / s; }
+  return out;
+}
+function pitchOf(x, rate) {
+  const n = Math.min(x.length, Math.round(rate * 0.06)), seg = x.subarray(x.length - n);
+  let mean = 0; for (let i = 0; i < n; i++) mean += seg[i]; mean /= n;
+  const z = new Float64Array(n); let e = 0; for (let i = 0; i < n; i++) { z[i] = seg[i] - mean; e += z[i] * z[i]; }
+  if (e < 1e-9) return { f0: 0, conf: 0 };
+  const lo = Math.floor(rate / 1100), hi = Math.min(Math.floor(rate / 60), n - 10);
+  const r = new Float64Array(hi + 2);
+  for (let L = lo; L <= hi + 1; L++) {
+    let s = 0, e1 = 0, e2 = 0;
+    for (let i = 0; i + L < n; i++) { s += z[i] * z[i + L]; e1 += z[i] * z[i]; e2 += z[i + L] * z[i + L]; }
+    r[L] = s / Math.sqrt(e1 * e2 + 1e-12);
+  }
+  let best = -1, bl = 0;
+  for (let L = lo + 1; L <= hi; L++) if (r[L] > r[L - 1] && r[L] >= r[L + 1] && r[L] > best) { best = r[L]; bl = L; }
+  // prefer the shortest lag that is nearly as good (avoids octave errors)
+  for (let L = lo + 1; L <= hi; L++) if (r[L] > r[L - 1] && r[L] >= r[L + 1] && r[L] > 0.9 * best) { bl = L; break; }
+  if (!bl) return { f0: 0, conf: 0 };
+  const a = r[bl - 1], b = r[bl], c = r[bl + 1], d = (a - c) / (2 * (a - 2 * b + c) || 1);
+  return { f0: rate / (bl + Math.max(-0.5, Math.min(0.5, d))), conf: r[bl] };
+}
+function lpc(x, p) {
+  const n = x.length, R = new Float64Array(p + 1);
+  for (let k = 0; k <= p; k++) { let s = 0; for (let i = k; i < n; i++) s += x[i] * x[i - k]; R[k] = s; }
+  R[0] *= 1.0001;
+  const a = new Float64Array(p + 1); a[0] = 1; let E = R[0];
+  if (E <= 0) return a;
+  for (let i = 1; i <= p; i++) {
+    let acc = R[i]; for (let j = 1; j < i; j++) acc += a[j] * R[i - j];
+    const k = -acc / E, prev = a.slice();
+    for (let j = 1; j < i; j++) a[j] = prev[j] + k * prev[i - j];
+    a[i] = k; E *= (1 - k * k);
+  }
+  return a;
+}
+function polyRoots(a) {
+  // roots of z^p + a1 z^(p-1) + ... + ap  (Durand-Kerner)
+  const p = a.length - 1, re = new Float64Array(p), im = new Float64Array(p);
+  for (let k = 0; k < p; k++) { const ang = 2 * Math.PI * k / p + 0.4; re[k] = 0.9 * Math.cos(ang); im[k] = 0.9 * Math.sin(ang); }
+  for (let it = 0; it < 600; it++) {
+    let moved = 0;
+    for (let k = 0; k < p; k++) {
+      let pr = 1, pi = 0;
+      for (let j = 1; j <= p; j++) { const nr = pr * re[k] - pi * im[k] + a[j], ni = pr * im[k] + pi * re[k]; pr = nr; pi = ni; }
+      let dr = 1, di = 0;
+      for (let j = 0; j < p; j++) if (j !== k) { const xr = re[k] - re[j], xi = im[k] - im[j]; const nr = dr * xr - di * xi, ni = dr * xi + di * xr; dr = nr; di = ni; }
+      const den = dr * dr + di * di || 1e-30, qr = (pr * dr + pi * di) / den, qi = (pi * dr - pr * di) / den;
+      re[k] -= qr; im[k] -= qi; moved += Math.abs(qr) + Math.abs(qi);
+    }
+    if (moved < 1e-12) break;
+  }
+  return Array.from(re, (r, i) => [r, im[i]]);
+}
+function applyFIR(x, a) {
+  const y = new Float64Array(x.length);
+  for (let i = 0; i < x.length; i++) { let v = 0; for (let k = 0; k < a.length && k <= i; k++) v += a[k] * x[i - k]; y[i] = v; }
+  return y;
+}
+function hann(x) { const n = x.length, y = new Float64Array(n); for (let i = 0; i < n; i++) y[i] = x[i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1))); return y; }
+function lowpassInPlace(x, fc) {
+  const key = fs + ":" + fc;
+  let h = LP_CACHE[key];
+  if (!h) {
+    const taps = 129, M = 64, c = fc / fs; h = new Float64Array(taps); let sum = 0;
+    for (let k = 0; k < taps; k++) { const t = k - M, s = t === 0 ? 2 * c : Math.sin(2 * Math.PI * c * t) / (Math.PI * t); h[k] = s * (0.42 - 0.5 * Math.cos(2 * Math.PI * k / (taps - 1)) + 0.08 * Math.cos(4 * Math.PI * k / (taps - 1))); sum += h[k]; }
+    for (let k = 0; k < taps; k++) h[k] /= sum;
+    LP_CACHE[key] = h;
+  }
+  const n = x.length, M = (h.length - 1) / 2, src = Float64Array.from(x);
+  for (let i = 0; i < n; i++) { let v = 0; for (let k = 0; k < h.length; k++) { const j = i + k - M; if (j >= 0 && j < n) v += h[k] * src[j]; } x[i] = v; }
+}
+function findClosures(d, T) {
+  const a = lpc(hann(d.map((v, i) => (i ? v - d[i - 1] : 0))), 14), res = applyFIR(d, a), L = Math.round(T);
+  // the stronger set of residual peaks marks the closures; this also works if the input polarity is flipped
+  const mins = [], maxs = [];
+  for (let s = 20; s + L < res.length; s += L) { let mn = Infinity, mx = -Infinity; for (let i = s; i < s + L; i++) { mn = Math.min(mn, res[i]); mx = Math.max(mx, res[i]); } mins.push(-mn); maxs.push(mx); }
+  const med = (v) => v.slice().sort((x, y) => x - y)[v.length >> 1] || 0;
+  const sgn = med(mins) >= med(maxs) ? -1 : 1, q = Math.round(T / 4);
+  lastSign = sgn;
+  const g = []; let i = -1, bv = -Infinity;
+  for (let k = 20; k < 20 + L && k < res.length; k++) if (sgn * res[k] > bv) { bv = sgn * res[k]; i = k; }
+  while (i >= 0 && i + T + q < res.length) {
+    g.push(i);
+    const c = Math.round(i + T); let bi = -1; bv = -Infinity;
+    for (let k = c - q; k <= c + q; k++) if (sgn * res[k] > bv) { bv = sgn * res[k]; bi = k; }
+    i = bi;
+  }
+  return g;
+}
+function covLPC(x, segs, p) {
+  const Phi = Array.from({ length: p }, () => new Float64Array(p)), psi = new Float64Array(p);
+  let rows = 0;
+  for (const [a, b] of segs) for (let n = Math.max(a, p); n < b && n < x.length; n++) {
+    rows++;
+    for (let j = 0; j < p; j++) { const vj = x[n - 1 - j]; psi[j] += vj * x[n]; for (let k = 0; k <= j; k++) Phi[j][k] += vj * x[n - 1 - k]; }
+  }
+  if (rows < 3 * p) return null;
+  let tr = 0; for (let j = 0; j < p; j++) tr += Phi[j][j];
+  for (let j = 0; j < p; j++) { for (let k = 0; k < j; k++) Phi[k][j] = Phi[j][k]; Phi[j][j] += 1e-7 * tr / p; }
+  // Cholesky solve
+  const Lm = Array.from({ length: p }, () => new Float64Array(p));
+  for (let j = 0; j < p; j++) {
+    let s = Phi[j][j]; for (let k = 0; k < j; k++) s -= Lm[j][k] * Lm[j][k];
+    if (!(s > 0)) return null; Lm[j][j] = Math.sqrt(s);
+    for (let i = j + 1; i < p; i++) { let t = Phi[i][j]; for (let k = 0; k < j; k++) t -= Lm[i][k] * Lm[j][k]; Lm[i][j] = t / Lm[j][j]; }
+  }
+  const y = new Float64Array(p), c = new Float64Array(p);
+  for (let i = 0; i < p; i++) { let s = psi[i]; for (let k = 0; k < i; k++) s -= Lm[i][k] * y[k]; y[i] = s / Lm[i][i]; }
+  for (let i = p - 1; i >= 0; i--) { let s = y[i]; for (let k = i + 1; k < p; k++) s -= Lm[k][i] * c[k]; c[i] = s / Lm[i][i]; }
+  const a = new Float64Array(p + 1); a[0] = 1; for (let i = 0; i < p; i++) a[i + 1] = -c[i];
+  return a;
+}
+function cpCandidates(x, f0, starts = CP_STARTS_MS, lens = CP_LENS) {
+  const D = Math.max(1, Math.floor(fs / 11000)), rate = fs / D;
+  const d = decimate(x, D);
+  let mean = 0; for (const v of d) mean += v; mean /= d.length;
+  for (let i = 0; i < d.length; i++) d[i] -= mean;
+  const T = rate / f0, g = findClosures(d, T);
+  if (g.length < 6) return [];
+  const p = Math.round(rate / 1000) + 2, out = [];
+  for (const ms of starts) for (const frac of lens) {
+    // the closure itself is smeared over a few tenths of a millisecond, so the fit starts a little after it
+    const s0 = Math.max(1, Math.round(0.04 * T), Math.round(ms * rate / 1000)), len = Math.max(4, Math.round(frac * T));
+    if (s0 + len > 0.75 * T) continue;
+    const a = covLPC(d, g.map((gi) => [gi + s0, gi + s0 + len]).filter(([, b]) => b < d.length), p);
+    if (!a) continue;
+    const found = [];
+    for (const [re, im] of polyRoots(a)) {
+      if (im <= 0) continue;
+      let mag = Math.hypot(re, im); if (mag > 1) mag = 1 / mag; // an unstable root is reflected inside the unit circle
+      const f = Math.atan2(im, re) * rate / (2 * Math.PI), bw = -Math.log(mag) * rate / Math.PI;
+      if (f > 150 && f < rate / 2 - 150) found.push({ f, bw });
+    }
+    found.sort((u, v) => u.f - v.f);
+    const est = assignResonances(found);
+    if (est.length >= 3) out.push(est);
+  }
+  return out;
+}
+function assignResonances(found) {
+  const out = []; let prev = 0;
+  const cands = found.filter((r) => r.bw < 700);
+  for (const r of cands) {
+    const i = out.length; if (i >= 5) break;
+    if (r.f < FR_DEF[i].lo || r.f < prev * 1.05) continue;
+    if (r.f > FR_DEF[i].hi) continue;
+    out.push({ f: r.f, bw: Math.max(30, Math.min(500, r.bw)) }); prev = r.f;
+  }
+  return out;
+}
+function inverseFilter(x) {
+  const n = x.length, y = Float64Array.from(x);
+  if (state.invert) for (let i = 0; i < n; i++) y[i] = -y[i];
+  // undo a first-order microphone high-pass (corner lfc), with a slight leak so it stays stable
+  if (state.lfc > 0) {
+    const a = Math.exp(-2 * Math.PI * state.lfc / fs), p = Math.exp(-2 * Math.PI * 0.5 / fs);
+    let x1 = 0, y1 = 0;
+    for (let i = 0; i < n; i++) { const xi = y[i]; const v = xi - a * x1 + p * y1; x1 = xi; y1 = v; y[i] = v; }
+  }
+  const corrected = Float64Array.from(y);
+  // anti-resonances (unity gain at 0 Hz)
+  for (const r of state.fr) {
+    if (!r.on) continue;
+    const rr = Math.exp(-Math.PI * r.bw / fs), b = 2 * rr * Math.cos(2 * Math.PI * r.f / fs), c = rr * rr, g = 1 - b + c;
+    let x1 = 0, x2 = 0;
+    for (let i = 0; i < n; i++) { const xi = y[i]; y[i] = (xi - b * x1 + c * x2) / g; x2 = x1; x1 = xi; }
+  }
+  lowpassInPlace(y, state.lp);
+  // y is the flow derivative; integrate with a slow leak to get flow
+  const flow = new Float64Array(n), p = Math.exp(-2 * Math.PI * 0.5 / fs);
+  let acc = 0, mean = 0;
+  for (let i = 0; i < n; i++) mean += y[i]; mean /= n;
+  for (let i = 0; i < n; i++) { acc = acc * p + (y[i] - mean); flow[i] = acc; }
+  return { corrected, deriv: y, flow };
+}
+function removeBaseline(flow, T) {
+  const L = Math.max(2, Math.round(T)), n = flow.length, cs = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) cs[i + 1] = cs[i] + flow[i];
+  const base = new Float64Array(n);
+  for (let i = 0; i < n; i++) { const a = Math.max(0, i - (L >> 1)), b = Math.min(n, a + L); base[i] = (cs[b] - cs[a]) / (b - a); }
+  for (let i = 0; i < n; i++) flow[i] -= base[i];
+}
+function closedRipple(flow, gcis, T, s0, s1) {
+  let lo = Infinity, hi = -Infinity;
+  for (let i = s0; i < s1; i++) { lo = Math.min(lo, flow[i]); hi = Math.max(hi, flow[i]); }
+  if (!(hi > lo)) return null;
+  let rip = 0, cnt = 0;
+  for (const gi of gcis) {
+    const a = Math.round(gi + CLOSED_A * T), b = Math.round(gi + CLOSED_B * T);
+    let mn = Infinity, mx = -Infinity;
+    for (let i = a; i < b; i++) { mn = Math.min(mn, flow[i]); mx = Math.max(mx, flow[i]); }
+    if (isFinite(mn)) { rip += mx - mn; cnt++; }
+  }
+  return cnt ? rip / cnt / (hi - lo) : null;
+}
+function periodicAverage(x, T, maxCycles) {
+  const L = Math.round(T), n = x.length, sh = Math.max(2, Math.round(0.15 * T)), W = Math.max(8, Math.round(0.2 * L)), LW = L + W;
+  if (n < 4 * L + W) return null;
+  const r0 = n - LW - sh - 1;
+  const segStarts = (tpl) => {
+    const starts = [];
+    for (let k = 0; k < maxCycles; k++) {
+      const c = Math.round(r0 - k * T);
+      if (c - sh < 0) break;
+      let best = c, bv = -Infinity;
+      for (let d = -sh; d <= sh; d++) { let v = 0; const o = c + d; for (let i = 0; i < L; i += 2) v += tpl[i] * x[o + i]; if (v > bv) { bv = v; best = o; } }
+      starts.push(best);
+    }
+    return starts;
+  };
+  let tpl = x.subarray(r0, r0 + L), avg = null, used = 0;
+  for (let pass = 0; pass < 2; pass++) {
+    const st = segStarts(tpl);
+    avg = new Float64Array(LW);
+    st.forEach((o) => { for (let i = 0; i < LW; i++) avg[i] += x[o + i]; });
+    for (let i = 0; i < LW; i++) avg[i] /= st.length;
+    tpl = avg; used = st.length;
+  }
+  // join the repeated cycle without a seam: the averaged stretch runs a little past one period,
+  // so the start of each repeat is crossfaded from that continuation into the cycle's own start
+  const cyc = avg.slice(0, L);
+  for (let i = 0; i < W; i++) { const w = 0.5 - 0.5 * Math.cos(Math.PI * (i + 0.5) / W); cyc[i] = w * avg[i] + (1 - w) * avg[L + i]; }
+  const y = new Float64Array(n);
+  for (let i = 0; i < n; i++) y[i] = cyc[(i + (L - (n % L))) % L];
+  return { y, used };
+}
+function estimate(x, f0) {
+  const D = Math.max(1, Math.floor(fs / 11000)), rate = fs / D;
+  let d = decimate(x, D);
+  const want = Math.max(Math.round(rate * 0.03), f0 ? Math.round(3 * rate / f0) : 0);
+  d = d.subarray(Math.max(0, d.length - want));
+  let mean = 0; for (const v of d) mean += v; mean /= d.length;
+  d = d.map((v) => v - mean);
+  // remove the glottal tilt first (IAIF, first pass)
+  const g1 = lpc(hann(d), 1), t = applyFIR(d, g1);
+  const p = Math.round(rate / 1000) + 2, a = lpc(hann(t), p);
+  const found = [];
+  for (const [re, im] of polyRoots(a)) {
+    if (im <= 0) continue;
+    const mag = Math.hypot(re, im), f = Math.atan2(im, re) * rate / (2 * Math.PI), bw = -Math.log(mag) * rate / Math.PI;
+    if (f > 150 && f < rate / 2 - 150 && bw > 0 && bw < 600) found.push({ f, bw: Math.max(50, Math.min(400, bw)) });
+  }
+  found.sort((u, v) => u.f - v.f);
+  return found.slice(0, 5);
+}
+/* measure the flow for the current settings: closures, ripple in the closed phase, three cycles to draw */
+function measure(src, T, cycles) {
+  const { deriv, flow } = inverseFilter(src);
+  removeBaseline(flow, T);
+  const n = src.length, pad = Math.round(0.02 * fs);
+  let g = -1, gv = Infinity;
+  for (let i = Math.max(1, Math.round(n - pad - 1.3 * T)); i < n - pad - 0.3 * T; i++) if (deriv[i] < gv) { gv = deriv[i]; g = i; }
+  const s0 = Math.round(g - cycles * T - 0.15 * T), s1 = Math.round(g - 0.15 * T);
+  if (g < 0 || s0 <= 0) return null;
+  const gcis = [];
+  for (let k = cycles; k >= 1; k--) {
+    const c = g - k * T; let bi = -1, bv = Infinity;
+    for (let i = Math.round(c - 0.25 * T); i <= Math.round(c + 0.25 * T); i++) if (deriv[i] < bv) { bv = deriv[i]; bi = i; }
+    gcis.push(bi);
+  }
+  return { flow, deriv, gcis, s0, s1, ripple: closedRipple(flow, gcis, T, s0, s1) };
+}
+// zero-phase low-pass made of biquads run forward and back, sharp enough to sit between fR1 and fR2
+function sharpLowpass(x, fc) {
+  const y = Float64Array.from(x), w0 = 2 * Math.PI * fc / fs, cw = Math.cos(w0);
+  for (const q of [0.5412, 1.3066]) {
+    const al = Math.sin(w0) / (2 * q), a0 = 1 + al, b0 = (1 - cw) / 2 / a0, b1 = (1 - cw) / a0, b2 = b0, a1 = -2 * cw / a0, a2 = (1 - al) / a0;
+    for (const dir of [1, -1]) {
+      let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+      const n = y.length;
+      for (let k = 0; k < n; k++) { const i = dir > 0 ? k : n - 1 - k, xi = y[i], v = b0 * xi + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = xi; y2 = y1; y1 = v; y[i] = v; }
+    }
+  }
+  return y;
+}
+function harmonicLevels(x, f0) {
+  const N = 8192, n = Math.min(N, x.length), re = new Float64Array(N), im = new Float64Array(N), o = x.length - n;
+  for (let i = 0; i < n; i++) re[i] = x[o + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1)));
+  fft(re, im);
+  const out = []; let mx = -Infinity;
+  for (let k = 1; k * f0 < Math.min(8000, fs / 2 - 100); k++) {
+    const c = k * f0 / fs * N, a = Math.floor(c - 0.25 * f0 / fs * N), b = Math.ceil(c + 0.25 * f0 / fs * N);
+    let p = 0; for (let j = Math.max(1, a); j <= Math.min(N / 2 - 1, b); j++) p = Math.max(p, re[j] * re[j] + im[j] * im[j]);
+    const db = 10 * Math.log10(p + 1e-30); out.push(db); mx = Math.max(mx, db);
+  }
+  return out.map((v) => v - mx);
+}
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; } }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let j = 0; j < len / 2; j++) {
+        const ar = re[i + j + len / 2] * cr - im[i + j + len / 2] * ci, ai = re[i + j + len / 2] * ci + im[i + j + len / 2] * cr;
+        re[i + j + len / 2] = re[i + j] - ar; im[i + j + len / 2] = im[i + j] - ai; re[i + j] += ar; im[i + j] += ai;
+        const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+      }
+    }
+  }
+}
+// One analysis of the most recent stretch of sound.
+function analyzeWindow(raw, opts) {
+  let level = 0; for (let i = Math.max(0, raw.length - Math.round(fs * 0.05)); i < raw.length; i++) level = Math.max(level, Math.abs(raw[i]));
+  const out = { level, f0: 0, conf: 0 };
+  if (level < 0.003) return out;
+  const D = Math.max(1, Math.floor(fs / 11000));
+  const pd = pitchOf(decimate(raw, D), fs / D);
+  out.f0 = pd.f0; out.conf = pd.conf;
+  if (!(pd.f0 > 0 && pd.conf > 0.6)) return out;
+  const T = fs / pd.f0;
+  const cands = cpCandidates(raw, pd.f0);
+  // closures in the residual tell us which way up the signal is; the user can still flip it
+  state.invert = (lastSign === 1) !== !!opts.flip;
+  const av = periodicAverage(raw, T, opts.cycles || 12);
+  const src = av ? av.y : raw;
+  state.lp = 4000;
+  let best = Infinity, pick = null;
+  for (const est of cands) {
+    setFr(est);
+    const m = measure(src, T, 3), v = m && m.ripple != null ? m.ripple : 9;
+    if (v < best) { best = v; pick = est; }
+  }
+  if (!pick) { pick = estimate(raw, pd.f0); out.fallback = true; }
+  if (!pick || !pick.length) return out;
+  setFr(pick);
+  state.lp = Math.min(6000, Math.max(3500, Math.ceil((state.fr[3].f + 300) / 100) * 100));
+  const m = measure(src, T, 3);
+  out.fr = state.fr.map((r) => ({ f: r.f, bw: r.bw }));
+  out.harm = harmonicLevels(raw, pd.f0);
+  out.inverted = state.invert;
+  if (m) {
+    out.ripple = m.ripple;
+    out.flow = Array.from(m.flow.subarray(m.s0, m.s1));
+    out.deriv = Array.from(m.deriv.subarray(m.s0, m.s1));
+    out.gcis = m.gcis.map((g) => g - m.s0);
+    // the sound itself, keeping fR1's ringing and little above it: this is where the ripples show
+    const fc = Math.sqrt(state.fr[0].f * state.fr[1].f), ring = sharpLowpass(src, fc);
+    out.ring = Array.from(ring.subarray(m.s0, m.s1), (v) => (state.invert ? -v : v));
+  }
+  return out;
+}
+if (typeof self !== "undefined" && typeof self.postMessage === "function" && typeof window === "undefined") {
+  self.onmessage = (e) => {
+    const { id, raw, rate, opts } = e.data;
+    fs = rate;
+    let res;
+    try { res = analyzeWindow(Float64Array.from(raw), opts || {}); } catch (err) { res = { error: String(err) }; }
+    res.id = id; res.t = e.data.t;
+    self.postMessage(res);
+  };
+}
+
+</script>
+<script>
+"use strict";
+/* ===================== Helpers ===================== */
+const $ = (id) => document.getElementById(id);
+const NAMES = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
+const hzOf = (m) => 440 * Math.pow(2, (m - 69) / 12);
+const midiOf = (hz) => 69 + 12 * Math.log2(hz / 440);
+const noteRound = (hz) => { const m = Math.round(midiOf(hz)); return NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); };
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function fitCanvas(c) {
+  const dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [g, w, h];
+}
+// Same rule as the Vowel Synth Lab, so the two tools always agree.
+function classify(F1, fo) {
+  if (Math.round(midiOf(F1)) >= Math.round(midiOf(2 * fo))) return ["open", "Open"];
+  const k1 = Math.round(midiOf(F1)) - Math.round(midiOf(fo));
+  if (k1 > 1) return ["close", "Close"];
+  if (k1 >= -1) return ["whoop", "Whoop"];
+  return ["over", "H1 above fR1"];
+}
+const LABEL_NAME = { open: "Open", close: "Close", whoop: "Whoop", over: "H1 above fR1" };
+// how close fR1 is to one of the dividing lines, in semitones
+function nearLine(F1, fo) {
+  const m = midiOf(F1), h1 = midiOf(fo), lines = [[h1 + 11.5, "close", "open"], [h1 + 1.5, "whoop", "close"], [h1 - 1.5, "over", "whoop"]];
+  let best = null;
+  for (const [b, lo, hi] of lines) { const d = Math.abs(m - b); if (d < 0.5 && (!best || d < best.d)) best = { d, lo, hi }; }
+  return best;
+}
+
+/* ===================== State ===================== */
+const state = { src: "mic", running: false, held: false, monitor: true, flip: false };
+let cur = null;             // latest result shown
+let trail = [];             // { t, f0, f1, label }
+const TRAIL_S = 30;
+let recentF1 = [];          // a few recent fR1 readings, for a steadier display
+
+/* ===================== Analysis engine (Web Worker, with a fallback on the page) ===================== */
+const DSP_SRC = document.getElementById("dsp-src").textContent;
+let worker = null, mainDSP = null, busy = false, reqId = 0;
+try {
+  worker = new Worker(URL.createObjectURL(new Blob([DSP_SRC], { type: "text/javascript" })));
+  worker.onmessage = (e) => { busy = false; onResult(e.data); };
+  worker.onerror = () => { worker = null; busy = false; };
+} catch (err) { worker = null; }
+function runAnalysis(raw, rate) {
+  const t = performance.now();
+  if (worker) { busy = true; worker.postMessage({ id: ++reqId, raw, rate, t, opts: { flip: state.flip } }); return; }
+  if (!mainDSP) mainDSP = new Function(DSP_SRC + "\nreturn { analyzeWindow, setRate: (r) => { fs = r; } };")();
+  mainDSP.setRate(rate);
+  const r = mainDSP.analyzeWindow(Float64Array.from(raw), { flip: state.flip }); r.t = t;
+  onResult(r);
+}
+
+/* ===================== Audio ===================== */
+let ctx = null, capture = null, srcNode = null, monGain = null, micStream = null, fileBuffer = null;
+let fs = 48000, RING = new Float32Array(fs * 2), ringPos = 0, ringFilled = 0;
+function pushSamples(block) {
+  for (let i = 0; i < block.length; i++) { RING[ringPos] = block[i]; ringPos = (ringPos + 1) % RING.length; }
+  ringFilled = Math.min(RING.length, ringFilled + block.length);
+}
+function lastSamples(n) {
+  n = Math.min(n, ringFilled);
+  const out = new Float32Array(n);
+  let p = (ringPos - n + RING.length) % RING.length;
+  for (let i = 0; i < n; i++) { out[i] = RING[p]; p = (p + 1) % RING.length; }
+  return out;
+}
+const CAPTURE_SRC = `
+class Cap extends AudioWorkletProcessor {
+  constructor() { super(); this.buf = new Float32Array(1024); this.n = 0; }
+  process(inputs, outputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (ch) for (let i = 0; i < ch.length; i++) { this.buf[this.n++] = ch[i]; if (this.n === 1024) { this.port.postMessage(this.buf.slice(0)); this.n = 0; } }
+    if (outputs[0] && outputs[0][0]) outputs[0][0].fill(0);
+    return true;
+  }
+}
+registerProcessor("cap", Cap);`;
+async function ensureCtx() {
+  if (ctx) { if (ctx.state !== "running") await ctx.resume(); return; }
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  fs = ctx.sampleRate;
+  RING = new Float32Array(Math.round(fs * 2)); ringPos = 0; ringFilled = 0;
+  monGain = ctx.createGain(); monGain.gain.value = state.monitor ? 0.8 : 0; monGain.connect(ctx.destination);
+  try {
+    const url = URL.createObjectURL(new Blob([CAPTURE_SRC], { type: "text/javascript" }));
+    await ctx.audioWorklet.addModule(url);
+    capture = new AudioWorkletNode(ctx, "cap", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    capture.port.onmessage = (e) => pushSamples(e.data);
+  } catch (err) {
+    capture = ctx.createScriptProcessor(1024, 1, 1);
+    capture.onaudioprocess = (e) => { pushSamples(e.inputBuffer.getChannelData(0)); e.outputBuffer.getChannelData(0).fill(0); };
+  }
+  const sink = ctx.createGain(); sink.gain.value = 0; capture.connect(sink); sink.connect(ctx.destination);
+}
+function stopSource() {
+  if (srcNode) { try { srcNode.stop && srcNode.stop(); } catch (e) {} try { srcNode.disconnect(); } catch (e) {} srcNode = null; }
+  if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+}
+async function startSource() {
+  await ensureCtx();
+  stopSource();
+  ringFilled = 0;
+  if (state.src === "mic") {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("nomic");
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+    srcNode = ctx.createMediaStreamSource(micStream);
+    srcNode.connect(capture);
+  } else {
+    if (!fileBuffer) throw new Error("nofile");
+    srcNode = ctx.createBufferSource(); srcNode.buffer = fileBuffer; srcNode.loop = true;
+    srcNode.connect(capture); srcNode.connect(monGain);
+    srcNode.start();
+  }
+}
+const statusEl = $("status"), goBtn = $("go");
+async function setRunning(on) {
+  if (on) {
+    try { await startSource(); state.running = true; setHeld(false); statusEl.textContent = "Listening. Sing a steady vowel."; }
+    catch (err) {
+      state.running = false;
+      if (err && err.message === "nofile") statusEl.textContent = "Choose an audio file first.";
+      else if (state.src === "mic") statusEl.textContent = "The microphone isn't available here. Open the published page in Chrome or Safari and allow the mic when asked.";
+      else statusEl.textContent = "Audio could not start. Press Start again.";
+    }
+  } else { stopSource(); state.running = false; statusEl.textContent = ""; }
+  goBtn.textContent = state.running ? "Stop" : "Start";
+  goBtn.classList.toggle("on", state.running);
+}
+goBtn.addEventListener("click", () => setRunning(!state.running));
+
+/* ===================== Taking readings ===================== */
+const WINDOW_S = 0.3, EVERY_MS = 150;
+let lastSent = 0;
+function tick(now) {
+  if (state.running && !state.held && !busy && now - lastSent > EVERY_MS && ringFilled >= fs * WINDOW_S) {
+    lastSent = now;
+    runAnalysis(lastSamples(Math.round(fs * WINDOW_S)), fs);
+  }
+}
+function onResult(r) {
+  if (state.held || !state.running) return;
+  const now = performance.now() / 1000;
+  const lvl = 20 * Math.log10((r.level || 0) + 1e-9);
+  if (r.error) { statusEl.textContent = "Analysis error: " + r.error; return; }
+  if (!r.level || lvl < -50) { statusEl.textContent = "Too quiet. Move closer or sing a little louder."; markStale(); return; }
+  if (r.level > 0.98) statusEl.textContent = "Clipping. Back off the mic or turn the input down.";
+  if (!r.f0 || r.conf < 0.6 || !r.fr) { if (r.level <= 0.98) statusEl.textContent = "Listening for a steady pitch…"; recentF1 = []; markStale(); return; }
+  if (r.level <= 0.98) statusEl.textContent = "";
+  // steady the display: median of the last few fR1 readings while the pitch stays put
+  if (cur && cur.f0 && Math.abs(midiOf(r.f0) - midiOf(cur.f0)) > 0.7) recentF1 = [];
+  recentF1.push(r.fr[0].f); if (recentF1.length > 3) recentF1.shift();
+  const s = recentF1.slice().sort((a, b) => a - b), f1 = s[s.length >> 1];
+  const [cls] = classify(f1, r.f0);
+  cur = { ...r, f1, cls, stale: false, at: now };
+  trail.push({ t: now, f0: r.f0, f1, cls });
+  while (trail.length && trail[0].t < now - TRAIL_S) trail.shift();
+  needsDraw = true;
+}
+function markStale() { if (cur && !cur.stale) { cur.stale = true; needsDraw = true; } }
+
+/* ===================== Readout ===================== */
+function updateReadout() {
+  const lab = $("r-label");
+  if (!cur) {
+    lab.className = "pill big none"; lab.textContent = "–";
+    ["r-f0", "r-f1", "r-ratio", "r-h2"].forEach((id) => { $(id).textContent = "–"; });
+    ["r-f0hz", "r-f1hz", "r-h2hz"].forEach((id) => { $(id).innerHTML = "&nbsp;"; });
+    $("border-note").textContent = ""; $("hi-note").hidden = true;
+    return;
+  }
+  lab.className = "pill big " + cur.cls + (cur.stale ? " stale" : "");
+  lab.textContent = LABEL_NAME[cur.cls];
+  $("r-f0").textContent = noteRound(cur.f0); $("r-f0hz").textContent = Math.round(cur.f0) + " Hz";
+  $("r-f1").textContent = noteRound(cur.f1); $("r-f1hz").textContent = Math.round(cur.f1) + " Hz";
+  $("r-ratio").textContent = (cur.f1 / cur.f0).toFixed(1);
+  $("r-h2").textContent = noteRound(2 * cur.f0); $("r-h2hz").textContent = Math.round(2 * cur.f0) + " Hz";
+  const nl = nearLine(cur.f1, cur.f0);
+  $("border-note").textContent = cur.stale ? "Last steady reading" : nl ? "Near the line between " + LABEL_NAME[nl.lo] + " and " + LABEL_NAME[nl.hi] : "";
+  $("hi-note").hidden = !(cur.f0 >= 500);
+}
+
+/* ===================== Keyboard ===================== */
+const kbd = $("kbd");
+const KB_LO = 36, KB_HI = 103;
+const isBlack = (m) => [1, 3, 6, 8, 10].includes(((m % 12) + 12) % 12);
+let KB = null;
+function layoutKeys(w) {
+  const whites = [];
+  for (let m = KB_LO; m <= KB_HI; m++) if (!isBlack(m)) whites.push(m);
+  const ww = w / whites.length;
+  const keys = {}, center = {};
+  whites.forEach((m, i) => { keys[m] = { x: i * ww, w: ww, black: false }; center[m] = i * ww + ww / 2; });
+  for (let m = KB_LO; m <= KB_HI; m++) if (isBlack(m)) {
+    const bx = keys[m - 1].x + ww; const bw = ww * 0.6;
+    keys[m] = { x: bx - bw / 2, w: bw, black: true }; center[m] = bx;
+  }
+  return { keys, center, ww };
+}
+function xOfMidi(mf) {
+  const c = KB.center;
+  if (mf <= KB_LO) return c[KB_LO] + (mf - KB_LO) * KB.ww / 2;
+  if (mf >= KB_HI) return c[KB_HI] + (mf - KB_HI) * KB.ww / 2;
+  const i = Math.floor(mf), fr = mf - i;
+  return c[i] + (c[i + 1] - c[i]) * fr;
+}
+function midiOfX(x) {
+  const c = KB.center;
+  if (x <= c[KB_LO]) return KB_LO + (x - c[KB_LO]) / (KB.ww / 2);
+  for (let m = KB_LO; m < KB_HI; m++) if (x <= c[m + 1]) return m + (x - c[m]) / (c[m + 1] - c[m]);
+  return KB_HI + (x - c[KB_HI]) / (KB.ww / 2);
+}
+const xOfHz = (hz) => xOfMidi(midiOf(hz));
+function tractMag(f, fr) {
+  const T = 1 / 48000, w = 2 * Math.PI * f * T;
+  let mag = 1;
+  for (const r of fr) {
+    const rr = Math.exp(-Math.PI * r.bw * T);
+    const c = -rr * rr, b = 2 * rr * Math.cos(2 * Math.PI * r.f * T), a = 1 - b - c;
+    mag *= a / Math.hypot(1 - b * Math.cos(w) - c * Math.cos(2 * w), b * Math.sin(w) + c * Math.sin(2 * w));
+  }
+  return mag;
+}
+function drawKeyboard() {
+  const [g, w, h] = fitCanvas(kbd);
+  KB = layoutKeys(w);
+  const stripH = Math.round(h * 0.5), keyTop = stripH + 8, keyH = h - keyTop - 2;
+  const ink = cssVar("--scope-ink"), grid = cssVar("--scope-grid"), curveCol = cssVar("--curve");
+  const cH1 = cssVar("--h1"), cH2 = cssVar("--h2"), cHn = cssVar("--hn");
+  g.clearRect(0, 0, w, h);
+  g.font = "11px " + cssVar("--font-mono");
+  g.strokeStyle = grid; g.lineWidth = 1;
+  for (let m = KB_LO; m <= KB_HI; m += 12) { const x = Math.round(KB.keys[m].x) + 0.5; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, stripH); g.stroke(); }
+  const top = 40, base = stripH;
+  const fo = cur && cur.f0, fr = cur && cur.fr ? cur.fr.map((r, i) => (i === 0 ? { f: cur.f1, bw: r.bw } : r)) : null;
+  g.globalAlpha = cur && cur.stale ? 0.45 : 1;
+  if (fr) {
+    const dbMin = -45, Yc = (db) => top + (Math.min(0, Math.max(dbMin, db)) / dbMin) * (base - top);
+    const vals = []; let cmax = 0;
+    for (let x = 0; x <= w; x += 2) { const m = tractMag(hzOf(midiOfX(x)), fr); vals.push(m); if (m > cmax) cmax = m; }
+    const path = () => { g.beginPath(); vals.forEach((m, i) => { const y = Yc(20 * Math.log10(m / cmax)); i ? g.lineTo(i * 2, y) : g.moveTo(0, y); }); };
+    path(); g.lineTo(w, base); g.lineTo(0, base); g.closePath();
+    const a0 = g.globalAlpha; g.globalAlpha = a0 * 0.18; g.fillStyle = curveCol; g.fill(); g.globalAlpha = a0;
+    path(); g.strokeStyle = curveCol; g.lineWidth = 2; g.stroke();
+  }
+  const hColor = (k) => (k === 1 ? cH1 : k === 2 ? cH2 : cHn);
+  const hl = {};
+  if (fo && cur.harm) {
+    const dbMinH = -50, Yh = (d) => top + (Math.min(0, Math.max(dbMinH, d)) / dbMinH) * (base - top);
+    for (let k = cur.harm.length; k >= 1; k--) {
+      const x = xOfHz(k * fo); if (x > w) continue;
+      g.strokeStyle = hColor(k); g.lineWidth = k <= 2 ? 4 : 2.5;
+      g.beginPath(); g.moveTo(x, keyTop - 2); g.lineTo(x, Yh(cur.harm[k - 1])); g.stroke();
+      if (k <= 6) {
+        g.fillStyle = hColor(k); g.textAlign = "center"; g.textBaseline = "bottom";
+        g.font = (k <= 2 ? "600 12px " : "11px ") + cssVar("--font-mono");
+        g.fillText("H" + k, x, Math.max(36, Yh(cur.harm[k - 1]) - 3));
+      }
+      const m = Math.round(midiOf(k * fo)); if (m >= KB_LO && m <= KB_HI) hl[m] = k;
+    }
+    g.font = "11px " + cssVar("--font-mono");
+  }
+  g.globalAlpha = 1;
+  const drawKey = (m) => {
+    const kk = KB.keys[m], kh = kk.black ? keyH * 0.62 : keyH, k = hl[m];
+    let fill = kk.black ? "#1c222c" : "#eef1f5";
+    if (k === 1) fill = cH1; else if (k === 2) fill = cH2; else if (k) fill = kk.black ? "#4a5a70" : "#c9d4e2";
+    g.fillStyle = fill;
+    g.fillRect(kk.x + (kk.black ? 0 : 0.5), keyTop, kk.w - (kk.black ? 0 : 1), kh);
+    if (!kk.black) { g.strokeStyle = "#8a96a8"; g.lineWidth = 1; g.strokeRect(kk.x + 0.5, keyTop + 0.5, kk.w - 1, kh - 1); }
+  };
+  for (let m = KB_LO; m <= KB_HI; m++) if (!isBlack(m)) drawKey(m);
+  for (let m = KB_LO; m <= KB_HI; m++) if (isBlack(m)) drawKey(m);
+  g.fillStyle = "#3a4250"; g.textAlign = "center"; g.textBaseline = "bottom";
+  for (let m = KB_LO; m <= KB_HI; m += 12) g.fillText("C" + (m / 12 - 1), KB.keys[m].x + KB.ww / 2, keyTop + keyH - 3);
+  if (!fr) {
+    g.fillStyle = ink; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(state.running ? "Listening for a steady pitch…" : "Press Start and sing a steady vowel", w / 2, stripH / 2);
+    return;
+  }
+  const mR1 = Math.round(midiOf(cur.f1));
+  if (mR1 >= KB_LO && mR1 <= KB_HI) {
+    const kk = KB.keys[mR1], kh = kk.black ? keyH * 0.62 : keyH;
+    g.strokeStyle = curveCol; g.lineWidth = 3; g.strokeRect(kk.x + 1.5, keyTop + 1.5, kk.w - 3, kh - 3);
+    g.fillStyle = curveCol; g.globalAlpha = 0.18; g.fillRect(kk.x + 1.5, keyTop + 1.5, kk.w - 3, kh - 3); g.globalAlpha = 1;
+  }
+  for (let i = 0; i < fr.length; i++) {
+    const x = xOfHz(fr[i].f);
+    if (x < 0 || x > w) continue;
+    g.strokeStyle = curveCol; g.lineWidth = i === 0 ? 2.5 : 1.5; g.setLineDash(i === 0 ? [] : [5, 4]);
+    g.beginPath(); g.moveTo(x, 20); g.lineTo(x, keyTop + keyH); g.stroke(); g.setLineDash([]);
+    if (i < 2) {
+      g.fillStyle = curveCol; g.beginPath(); g.roundRect ? g.roundRect(x - 17, 2, 34, 18, 9) : g.rect(x - 17, 2, 34, 18); g.fill();
+      g.fillStyle = "#08111c"; g.textAlign = "center"; g.textBaseline = "middle"; g.font = "600 11px " + cssVar("--font-mono");
+      g.fillText("fR" + (i + 1), x, 11.5); g.font = "11px " + cssVar("--font-mono");
+    } else { g.fillStyle = curveCol; g.textAlign = "center"; g.textBaseline = "top"; g.fillText("fR" + (i + 1), x, 4); }
+  }
+}
+
+/* ===================== Grand staff ===================== */
+const staffCv = $("staff");
+const SPELL = [[0, ""], [0, "♯"], [1, ""], [2, "♭"], [2, ""], [3, ""], [3, "♯"], [4, ""], [5, "♭"], [5, ""], [6, "♭"], [6, ""]];
+const LETTERS = "CDEFGAB";
+function spell(m) {
+  const pc = ((m % 12) + 12) % 12, [li, acc] = SPELL[pc], oct = Math.floor(m / 12) - 1;
+  return { step: oct * 7 + li, acc, name: LETTERS[li] + acc + oct };
+}
+function contStep(mf) { const lo = Math.floor(mf), fr = mf - lo, a = spell(lo).step, b = spell(lo + 1).step; return a + (b - a) * fr; }
+const CLEF_FONT = "'Noto Music', 'Bravura', 'Segoe UI Symbol', 'Apple Symbols', 'FreeSerif', serif";
+function drawGlyph(g, ch, x, top, bottom) {
+  g.font = "100px " + CLEF_FONT;
+  const m = g.measureText(ch), asc = m.actualBoundingBoxAscent || 70, desc = m.actualBoundingBoxDescent || 30;
+  const k = (bottom - top) / (asc + desc || 1);
+  g.font = (100 * k) + "px " + CLEF_FONT; g.textAlign = "left"; g.textBaseline = "alphabetic";
+  g.fillText(ch, x, top + asc * k);
+}
+function drawStaff() {
+  const [g, w, h] = fitCanvas(staffCv);
+  const ink = cssVar("--ink"), muted = cssVar("--muted"), curveCol = cssVar("--curve");
+  const cH1 = cssVar("--h1"), cH2 = cssVar("--h2"), cHn = cssVar("--muted");
+  g.clearRect(0, 0, w, h);
+  const s = 11, yF5 = 84, yE4 = yF5 + 4 * s, yA3 = yE4 + 6 * s, yG2 = yA3 + 4 * s, left = 14, right = w - 14;
+  const trebleY = (st) => yE4 - (st - 30) * s / 2, bassY = (st) => yA3 - (st - 26) * s / 2;
+  const yOfStep = (st) => (st >= 27.5 ? trebleY(st) : bassY(st));
+  g.strokeStyle = ink; g.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    g.beginPath(); g.moveTo(left, Math.round(yF5 + i * s) + 0.5); g.lineTo(right, Math.round(yF5 + i * s) + 0.5); g.stroke();
+    g.beginPath(); g.moveTo(left, Math.round(yA3 + i * s) + 0.5); g.lineTo(right, Math.round(yA3 + i * s) + 0.5); g.stroke();
+  }
+  g.lineWidth = 2; g.beginPath(); g.moveTo(left, yF5); g.lineTo(left, yG2); g.stroke(); g.lineWidth = 1;
+  g.fillStyle = ink;
+  drawGlyph(g, "\u{1D11E}", left + 6, yF5 - 1.9 * s, yE4 + 1.7 * s);
+  drawGlyph(g, "\u{1D122}", left + 8, yA3 - 0.15 * s, yA3 + 3.1 * s);
+  if (!cur) return;
+  g.globalAlpha = cur.stale ? 0.45 : 1;
+  const x0 = left + 70, x1 = right - 96;
+  [[cur.f1, "fR1", [], 3], [cur.fr[1].f, "fR2", [6, 4], 2]].forEach(([f, lab, dash, lw]) => {
+    const st = contStep(midiOf(f));
+    if (st > 46 || st < 12) return;
+    const y = yOfStep(st);
+    g.strokeStyle = curveCol; g.lineWidth = lw; g.setLineDash(dash);
+    g.beginPath(); g.moveTo(x0 - 18, y); g.lineTo(x1 + 8, y); g.stroke(); g.setLineDash([]); g.lineWidth = 1;
+    g.fillStyle = curveCol; g.font = "600 12px " + cssVar("--font-mono"); g.textAlign = "left"; g.textBaseline = "middle";
+    g.fillText(lab + " " + noteRound(f), x1 + 14, y);
+  });
+  const fo = cur.f0, notes = [];
+  for (let k = 1; k <= 10; k++) {
+    const mf = midiOf(k * fo), m = Math.round(mf), sp = spell(m);
+    if (sp.step > 46) break;
+    notes.push({ k, m, sp });
+  }
+  const gap = Math.min(64, (x1 - x0) / Math.max(notes.length, 1));
+  notes.forEach((n, idx) => {
+    const x = x0 + gap * (idx + 0.5), st = n.sp.step, y = yOfStep(st);
+    const col = n.k === 1 ? cH1 : n.k === 2 ? cH2 : cHn;
+    g.strokeStyle = ink; g.lineWidth = 1;
+    const ledger = (yy) => { g.beginPath(); g.moveTo(x - s * 1.1, Math.round(yy) + 0.5); g.lineTo(x + s * 1.1, Math.round(yy) + 0.5); g.stroke(); };
+    if (st >= 28) { for (let l = 40; l <= st; l += 2) ledger(trebleY(l)); if (st <= 28) ledger(trebleY(28)); }
+    else { for (let l = 16; l >= st; l -= 2) ledger(bassY(l)); }
+    g.fillStyle = col;
+    g.beginPath(); g.ellipse(x, y, s * 0.68, s * 0.47, -0.35, 0, 2 * Math.PI); g.fill();
+    if (n.sp.acc) { g.font = (s * 1.7) + "px " + CLEF_FONT; g.textAlign = "right"; g.textBaseline = "middle"; g.fillText(n.sp.acc, x - s * 0.95, y); }
+    g.textAlign = "center"; g.textBaseline = "alphabetic";
+    g.font = (n.k <= 2 ? "600 12px " : "12px ") + cssVar("--font-mono");
+    g.fillStyle = col; g.fillText("H" + n.k, x, 16);
+    g.fillStyle = muted; g.font = "11px " + cssVar("--font-mono"); g.fillText(n.sp.name, x, h - 8);
+  });
+  g.globalAlpha = 1;
+}
+
+/* ===================== Trail ===================== */
+const trailCv = $("trail");
+function drawTrail() {
+  const [g, w, h] = fitCanvas(trailCv);
+  const ink = cssVar("--scope-ink"), grid = cssVar("--scope-grid");
+  g.clearRect(0, 0, w, h); g.font = "11px " + cssVar("--font-mono");
+  const padL = 40, padR = 10, padT = 10, padB = 20, pw = w - padL - padR, ph = h - padT - padB;
+  const now = state.held && trail.length ? trail[trail.length - 1].t : performance.now() / 1000;
+  // pitch range: fit what has been sung (H1 to the higher of H2 and fR1), at least two octaves
+  let lo = Infinity, hi = -Infinity;
+  for (const p of trail) { lo = Math.min(lo, midiOf(p.f0), midiOf(p.f1)); hi = Math.max(hi, midiOf(2 * p.f0), midiOf(p.f1)); }
+  if (!isFinite(lo)) { lo = 43; hi = 79; }
+  lo = Math.floor(lo - 2); hi = Math.ceil(hi + 2);
+  if (hi - lo < 24) { const c = (hi + lo) / 2; lo = Math.floor(c - 12); hi = Math.ceil(c + 12); }
+  const X = (t) => padL + (1 - (now - t) / TRAIL_S) * pw, Y = (m) => padT + (1 - (m - lo) / (hi - lo)) * ph;
+  // grid: every C labeled, every other natural note faint
+  g.textAlign = "right"; g.textBaseline = "middle";
+  for (let m = Math.ceil(lo); m <= hi; m++) {
+    const pc = ((m % 12) + 12) % 12; if (isBlack(m)) continue;
+    g.strokeStyle = grid; g.globalAlpha = pc === 0 ? 1 : 0.35; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(padL, Math.round(Y(m)) + 0.5); g.lineTo(padL + pw, Math.round(Y(m)) + 0.5); g.stroke();
+    g.globalAlpha = 1;
+    if (pc === 0) { g.fillStyle = ink; g.fillText("C" + (m / 12 - 1), padL - 4, Y(m)); }
+  }
+  g.textAlign = "center"; g.textBaseline = "top"; g.fillStyle = ink;
+  for (let s = 0; s <= TRAIL_S; s += 5) g.fillText(s ? "-" + s + " s" : "now", X(now - s), padT + ph + 4);
+  if (!trail.length) {
+    g.textBaseline = "middle"; g.fillText(state.running ? "Sing a scale on one vowel" : "Press Start", padL + pw / 2, padT + ph / 2);
+    return;
+  }
+  // shading by label
+  const gapS = 0.6;
+  for (let i = 0; i < trail.length; i++) {
+    const p = trail[i], nx = i + 1 < trail.length && trail[i + 1].t - p.t < gapS ? trail[i + 1].t : p.t + 0.15;
+    g.fillStyle = cssVar("--" + p.cls); g.globalAlpha = 0.22;
+    g.fillRect(X(p.t), padT, Math.max(1, X(nx) - X(p.t)), ph);
+  }
+  g.globalAlpha = 1;
+  const line = (val, col, wid) => {
+    g.strokeStyle = col; g.lineWidth = wid; g.beginPath(); let pen = false, pt = -1;
+    for (const p of trail) {
+      const x = X(p.t), y = Y(midiOf(val(p)));
+      if (!pen || p.t - pt > gapS) g.moveTo(x, y); else g.lineTo(x, y);
+      pen = true; pt = p.t;
+    }
+    g.stroke();
+  };
+  line((p) => 2 * p.f0, cssVar("--h2"), 2.5);
+  line((p) => p.f0, cssVar("--h1"), 2.5);
+  g.fillStyle = cssVar("--curve");
+  for (const p of trail) { g.beginPath(); g.arc(X(p.t), Y(midiOf(p.f1)), 2.6, 0, 2 * Math.PI); g.fill(); }
+}
+
+/* ===================== Ripples and glottal flow ===================== */
+const flowCv = $("flow"), ringCv = $("ring");
+function drawCycles(cv, d, opts) {
+  const [g, w, h] = fitCanvas(cv);
+  const ink = cssVar("--scope-ink"), col = opts.color;
+  g.clearRect(0, 0, w, h); g.font = "11px " + cssVar("--font-mono");
+  if (!cur || !d) {
+    g.fillStyle = ink; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(state.running ? "Listening for a steady pitch…" : "Press Start", w / 2, h / 2); return;
+  }
+  const n = d.length, padL = 8, padR = 8, padT = 18, padB = 8, pw = w - padL - padR, ph = h - padT - padB;
+  let lo = Infinity, hi = -Infinity; for (const v of d) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  if (opts.center) { const m = Math.max(Math.abs(lo), Math.abs(hi)) || 1; lo = -m; hi = m; }
+  const span = hi - lo || 1, X = (i) => padL + i / (n - 1) * pw, Y = (v) => padT + (1 - (v - lo) / span) * ph * 0.92 + ph * 0.04;
+  const A = cur.stale ? 0.45 : 1;
+  if (opts.center) { g.strokeStyle = cssVar("--scope-grid"); g.lineWidth = 1; g.beginPath(); g.moveTo(padL, Math.round(Y(0)) + 0.5); g.lineTo(padL + pw, Math.round(Y(0)) + 0.5); g.stroke(); }
+  g.setLineDash([4, 4]); g.strokeStyle = cssVar("--h1"); g.fillStyle = cssVar("--h1"); g.textAlign = "center"; g.textBaseline = "top"; g.lineWidth = 1;
+  g.globalAlpha = 0.7 * A;
+  (cur.gcis || []).forEach((gi) => { const x = X(gi); g.beginPath(); g.moveTo(x, padT); g.lineTo(x, padT + ph); g.stroke(); g.fillText("closure", x, 3); });
+  g.setLineDash([]); g.globalAlpha = A;
+  g.beginPath(); for (let i = 0; i < n; i++) { const x = X(i), y = Y(d[i]); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  g.strokeStyle = col; g.lineWidth = opts.width || 2; g.stroke();
+  if (opts.fill) { g.lineTo(X(n - 1), padT + ph); g.lineTo(X(0), padT + ph); g.closePath(); g.globalAlpha = 0.15 * A; g.fillStyle = col; g.fill(); }
+  g.globalAlpha = 1;
+  if (opts.caption) { g.fillStyle = ink; g.textAlign = "right"; g.textBaseline = "top"; g.fillText(opts.caption, w - 10, 3); }
+}
+function drawFlow() {
+  drawCycles(ringCv, cur && cur.ring, { color: cssVar("--h1"), center: true, width: 1.8, caption: cur ? (cur.f1 / cur.f0).toFixed(1) + " ripples per cycle" : "" });
+  drawCycles(flowCv, cur && cur.flow, { color: cssVar("--curve"), fill: true, width: 2.2 });
+}
+
+/* ===================== Loop and controls ===================== */
+let needsDraw = true;
+function loop(now) {
+  tick(now);
+  if (needsDraw || (state.running && !state.held)) {
+    updateReadout(); drawStaff(); drawKeyboard(); drawTrail(); if ($("flow-panel").open) drawFlow();
+    needsDraw = false;
+  }
+  requestAnimationFrame(loop);
+}
+function setHeld(on) {
+  state.held = on && state.running;
+  $("hold").setAttribute("aria-pressed", String(state.held));
+  $("hold").textContent = state.held ? "Release" : "Hold";
+  needsDraw = true;
+}
+$("hold").addEventListener("click", () => setHeld(!state.held));
+$("clear").addEventListener("click", () => { trail = []; needsDraw = true; });
+$("flip").addEventListener("change", (e) => { state.flip = e.target.checked; });
+$("monitor").addEventListener("change", (e) => { state.monitor = e.target.checked; if (monGain) monGain.gain.value = state.monitor ? 0.8 : 0; });
+$("flow-panel").addEventListener("toggle", () => { needsDraw = true; });
+document.querySelectorAll("[data-src]").forEach((b) => b.addEventListener("click", async () => {
+  state.src = b.dataset.src;
+  document.querySelectorAll("[data-src]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  $("file-ctl").hidden = state.src !== "file"; $("mic-ctl").hidden = state.src !== "mic";
+  statusEl.textContent = "";
+  if (state.running) await setRunning(true);
+}));
+$("file").addEventListener("change", async (e) => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  try {
+    await ensureCtx();
+    fileBuffer = await ctx.decodeAudioData(await f.arrayBuffer());
+    statusEl.textContent = "Loaded " + f.name + ". Press Start.";
+    if (state.running) await setRunning(true);
+  } catch (err) { statusEl.textContent = "That file couldn't be read. Try a WAV or MP3."; }
+});
+document.addEventListener("keydown", (e) => {
+  const t = e.target;
+  if (t.tagName === "SELECT" || (t.tagName === "INPUT" && t.type !== "checkbox" && t.type !== "range")) return;
+  if (e.code === "Space") { e.preventDefault(); setHeld(!state.held); }
+});
+new ResizeObserver(() => { needsDraw = true; }).observe(trailCv);
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { needsDraw = true; });
+if (document.fonts && document.fonts.load) document.fonts.load("40px 'Noto Music'", "\u{1D11E}").then(() => { needsDraw = true; }, () => {});
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
