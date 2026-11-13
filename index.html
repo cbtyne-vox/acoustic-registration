@@ -292,7 +292,7 @@ details.panel[open] > summary { margin-bottom: 12px; }
 
       <div class="field">
         <span class="lab">What it can measure</span>
-        <p class="note">Reliable from the bass staff up to about B4, for any voice, on a steady note held for a third of a second or more. Above about C5 the harmonics are too far apart to find fR1. Vibrato is fine. Fast runs and slides read only once the pitch settles.</p>
+        <p class="note">Reliable from the bass staff up to about B4, for any voice, on a steady note held for a fifth of a second or more. Above about C5 the harmonics are too far apart to find fR1. Vibrato is fine. Fast runs and slides read only once the pitch settles.</p>
       </div>
       <p class="keys"><kbd>Space</kbd> hold or release</p>
     </aside>
@@ -318,6 +318,7 @@ const FR_DEF = [
   { f: 4200, bw: 220, lo: 3000, hi: 5600 }
 ];
 const CP_STARTS_MS = [0, 0.3, 0.5, 0.8, 1.1], CP_LENS = [0.25, 0.35];
+let CONSENSUS = 0.2, RECENT_S = 0.08;
 const CLOSED_A = 0.06, CLOSED_B = 0.25;
 const LP_CACHE = {};
 const setFr = (est) => { state.fr = FR_DEF.map((d, i) => { const e = est[i]; return e ? { f: Math.max(d.lo, Math.min(d.hi, e.f)), bw: Math.max(30, Math.min(500, e.bw)), on: true } : { f: d.f, bw: d.bw, on: true }; }); };
@@ -457,7 +458,9 @@ function cpCandidates(x, f0, starts = CP_STARTS_MS, lens = CP_LENS) {
   const d = decimate(x, D);
   let mean = 0; for (const v of d) mean += v; mean /= d.length;
   for (let i = 0; i < d.length; i++) d[i] -= mean;
-  const T = rate / f0, g = findClosures(d, T);
+  const T = rate / f0, g0 = findClosures(d, T);
+  // fit only the most recent cycles, so the reading follows a change of vowel quickly
+  const keepFrom = d.length - Math.max(RECENT_S * rate, 10 * T), g = g0.filter((gi) => gi >= keepFrom);
   if (g.length < 6) return [];
   const p = Math.round(rate / 1000) + 2, out = [];
   for (const ms of starts) for (const frac of lens) {
@@ -642,17 +645,45 @@ function fft(re, im) {
     }
   }
 }
+function goertzelPower(x, rate, f) {
+  const n = x.length, w = 2 * Math.PI * f / rate, c = 2 * Math.cos(w);
+  let s1 = 0, s2 = 0;
+  for (let i = 0; i < n; i++) { const win = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1)), s = x[i] * win + c * s1 - s2; s2 = s1; s1 = s; }
+  return s1 * s1 + s2 * s2 - c * s1 * s2;
+}
+// Is there a real harmonic at f0 / k? A true H1 down there stands far above the noise right next to it
+// (45 dB or more in tests; we ask for 35) and isn't much weaker than the voice's strongest harmonic. Hum and room
+// noise fail one test or the other.
+function hasSubharmonic(x, rate, f0, k) {
+  const h = f0 / k, peak = (f) => { let m = 0; for (const df of [-0.015, 0, 0.015]) m = Math.max(m, goertzelPower(x, rate, f * (1 + df))); return m; };
+  const p = peak(h), floor = (goertzelPower(x, rate, h * 0.75) + goertzelPower(x, rate, h * 1.25)) / 2 + 1e-30;
+  let top = 0; for (let j = 1; j <= 4; j++) if (j * f0 < rate / 2 - 100) top = Math.max(top, peak(j * f0));
+  return p > 3000 * floor && p > 1e-3 * top;
+}
+function fixPitch(x, rate, f0) {
+  // when H2 or H3 sits on fR1 it can be so strong that the tracker takes it for the sung pitch
+  for (const k of [3, 2]) if (f0 / k >= 55 && hasSubharmonic(x, rate, f0, k)) return f0 / k;
+  return f0;
+}
 // One analysis of the most recent stretch of sound.
 function analyzeWindow(raw, opts) {
   let level = 0; for (let i = Math.max(0, raw.length - Math.round(fs * 0.05)); i < raw.length; i++) level = Math.max(level, Math.abs(raw[i]));
   const out = { level, f0: 0, conf: 0 };
   if (level < 0.003) return out;
-  const D = Math.max(1, Math.floor(fs / 11000));
-  const pd = pitchOf(decimate(raw, D), fs / D);
+  const D = Math.max(1, Math.floor(fs / 11000)), dec = decimate(raw, D);
+  const pd = pitchOf(dec, fs / D);
+  if (pd.f0 > 0) pd.f0 = fixPitch(dec, fs / D, pd.f0);
   out.f0 = pd.f0; out.conf = pd.conf;
   if (!(pd.f0 > 0 && pd.conf > 0.6)) return out;
   const T = fs / pd.f0;
-  const cands = cpCandidates(raw, pd.f0);
+  let cands = cpCandidates(raw, pd.f0);
+  // the candidates vote on fR1 first: one that lost fR1 (and called fR2 "fR1") is dropped before the
+  // flattest closed phase is chosen. Phone microphones make that slip much more likely.
+  if (cands.length >= 3) {
+    const f1s = cands.map((e) => e[0].f).sort((a, b) => a - b), med = f1s[f1s.length >> 1];
+    const kept = cands.filter((e) => Math.abs(Math.log(e[0].f / med)) < CONSENSUS);
+    if (kept.length) cands = kept;
+  }
   // closures in the residual tell us which way up the signal is; the user can still flip it
   state.invert = (lastSign === 1) !== !!opts.flip;
   const av = periodicAverage(raw, T, opts.cycles || 12);
@@ -732,7 +763,9 @@ const state = { src: "mic", running: false, held: false, monitor: true, flip: fa
 let cur = null;             // latest result shown
 let trail = [];             // { t, f0, f1, label }
 const TRAIL_S = 30;
-let recentF1 = [];          // a few recent fR1 readings, for a steadier display
+const HOLD_ST = 0.5;        // how far past a line a reading must land to flip the label
+const FAST_ST = 3;          // a single reading this far past a line flips it without waiting for the next
+let recentF1 = [];          // the last few fR1 readings
 let pendingJump = 0;        // a big pitch jump waiting for a second reading to confirm it
 
 /* ===================== Analysis engine (Web Worker, with a fallback on the page) ===================== */
@@ -831,7 +864,7 @@ async function setRunning(on) {
 goBtn.addEventListener("click", () => setRunning(!state.running));
 
 /* ===================== Taking readings ===================== */
-const WINDOW_S = 0.3, EVERY_MS = 150;
+const WINDOW_S = 0.2, EVERY_MS = 50;
 let lastSent = 0;
 function tick(now) {
   if (state.running && !state.held && !busy && now - lastSent > EVERY_MS && ringFilled >= fs * WINDOW_S) {
@@ -853,11 +886,22 @@ function onResult(r) {
     if (!pendingJump || Math.abs(midiOf(r.f0) - midiOf(pendingJump)) > 1) { pendingJump = r.f0; return; }
   }
   pendingJump = 0;
-  // steady the display: median of the last few fR1 readings while the pitch stays put
+  // Steady the reading a little: the middle of the last three fR1 readings (readings come every 0.08 s,
+  // so this adds about 0.08 s), started fresh whenever the sung note changes.
   if (cur && cur.f0 && Math.abs(midiOf(r.f0) - midiOf(cur.f0)) > 0.7) recentF1 = [];
   recentF1.push(r.fr[0].f); if (recentF1.length > 3) recentF1.shift();
-  const s = recentF1.slice().sort((a, b) => a - b), f1 = s[s.length >> 1];
-  const [cls] = classify(f1, r.f0);
+  // A reading far past a dividing line (a real change of vowel, not scatter) flips the label at once.
+  const inside = (F, fo, c, st) => { const k = Math.pow(2, st / 12); return classify(F * k, fo)[0] === c && classify(F / k, fo)[0] === c; };
+  const raw1 = r.fr[0].f, [rawCls] = classify(raw1, r.f0);
+  if (cur && !cur.stale && rawCls !== cur.cls && inside(raw1, r.f0, rawCls, FAST_ST)) recentF1 = [raw1];
+  const s = recentF1.slice().sort((a, b) => a - b), f1 = s[s.length >> 1], [now1] = classify(f1, r.f0);
+  // A reading right on a dividing line can't flip the label: it has to land at least HOLD_ST semitones
+  // into the new region. Real changes move fR1 well past the line, so they still show at once.
+  let cls = now1;
+  if (cur && !cur.stale && cur.cls !== now1) {
+    const k = Math.pow(2, HOLD_ST / 12);
+    if (classify(f1 * k, r.f0)[0] !== now1 || classify(f1 / k, r.f0)[0] !== now1) cls = cur.cls;
+  }
   cur = { ...r, f1, cls, stale: false, at: now };
   trail.push({ t: now, f0: r.f0, f1, cls });
   while (trail.length && trail[0].t < now - TRAIL_S) trail.shift();
