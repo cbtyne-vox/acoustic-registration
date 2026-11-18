@@ -132,19 +132,6 @@ details .field { margin-top: 8px; }
 .keys { font-size: 12.5px; color: var(--muted); }
 .keys kbd { font-family: var(--font-mono); font-size: 11.5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--bg); color: var(--ink); }
 #status { font-size: 13px; color: var(--muted); min-height: 1.2em; }
-
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <h1>Vowel Synth Lab</h1>
-    <p class="sub">A glottal source through five vocal-tract resonances. Move pitch and vowel and watch H1 and H2 cross fR1.</p>
-  </header>
-
-  <section class="panel" aria-label="Keyboard">
-    <div class="row" style="justify-content: space-between;">
-      <div class="row" style="gap: 12px;"><h2>Keyboard: harmonics and resonances</h2><span class="pill open" id="k-timbre">Open</span><span class="note" id="k-ratio"></span></div>
-      <span class="note">Click or drag across the keys to sing a pitch. Drag the fR1 or fR2 handle to move a resonance.</span>
 /* Acoustic Registration Lab additions */
 .pill.none { background: var(--line); color: var(--muted); }
 .now { display: grid; grid-template-columns: minmax(220px, auto) minmax(0, 1fr); gap: 18px; align-items: center; }
@@ -170,6 +157,19 @@ details.panel > summary h2::before { content: "▸ "; }
 details.panel[open] > summary h2::before { content: "▾ "; }
 details.panel[open] > summary { margin-bottom: 12px; }
 [hidden] { display: none !important; }
+
+/* input level meter: −60 to 0 dBFS; green, then amber from −12, red from −3 */
+.meter { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.meter .mlab { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.meter .mbar { position: relative; flex: 1; height: 14px; border-radius: 7px; background: var(--line); overflow: visible; margin-bottom: 14px; }
+.meter .mfill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 7px;
+  background: linear-gradient(to right, #3aa76d 0%, #3aa76d 79%, #e0a526 80%, #e0a526 94%, #d64545 95%, #d64545 100%);
+  background-size: var(--mw, 100%) 100%; }
+.meter .mhold { position: absolute; top: -2px; bottom: -2px; width: 2px; left: 0; background: var(--text, #222); opacity: 0; }
+.meter .mtick { position: absolute; top: 16px; transform: translateX(-50%); font-size: 10px; color: var(--muted); font-family: var(--font-mono, monospace); }
+.meter .mclip { font-size: 12px; font-weight: 600; color: #fff; background: #d64545; border-radius: 10px; padding: 2px 9px; }
+.clipwarn { border-color: #d64545; }
+@media (max-width: 500px) { .meter .mtick.m6 { display: none; } }
 </style>
 </head>
 <body>
@@ -192,6 +192,19 @@ details.panel[open] > summary { margin-bottom: 12px; }
         <div class="tile"><span class="k">H2 (octave above)</span><span class="v" id="r-h2">–</span><span class="s" id="r-h2hz">&nbsp;</span></div>
       </div>
     </div>
+    <div class="meter" aria-label="Input level">
+      <span class="mlab">Input level</span>
+      <div class="mbar" id="m-bar" aria-hidden="true">
+        <div class="mfill" id="m-fill"></div>
+        <div class="mhold" id="m-hold"></div>
+        <span class="mtick" style="left: 60%">−24</span>
+        <span class="mtick" style="left: 80%">−12</span>
+        <span class="mtick m6" style="left: 90%">−6</span>
+        <span class="mtick" style="left: 100%">0</span>
+      </div>
+      <span class="mclip" id="m-clip" hidden>Clipping</span>
+    </div>
+    <p class="warn clipwarn" id="clip-note" role="alert" hidden></p>
     <p class="warn" id="hi-note" hidden>At this pitch, fR1 can't be measured reliably, by hand or by computer. The harmonics are too far apart to show where the resonance is, so the reading tends to land on a harmonic. Treat the label as a guess.</p>
   </section>
 
@@ -788,7 +801,18 @@ function runAnalysis(raw, rate) {
 /* ===================== Audio ===================== */
 let ctx = null, capture = null, srcNode = null, monGain = null, micStream = null, fileBuffer = null;
 let fs = 48000, RING = new Float32Array(fs * 2), ringPos = 0, ringFilled = 0;
+/* input level meter and clipping check */
+const meter = { peak: 0, hold: 0, holdT: 0, clipT: -1e9, clips: 0, last: 0 };
 function pushSamples(block) {
+  let pk = 0, flat = 0;
+  for (let i = 0; i < block.length; i++) {
+    const a = Math.abs(block[i]);
+    if (a > pk) pk = a;
+    if (a >= 0.985) flat++;
+  }
+  // clipping: a sample at full scale, or a few samples pressed against the top
+  if (pk >= 0.999 || flat >= 2) { meter.clipT = performance.now(); meter.clips++; }
+  if (pk > meter.peak) meter.peak = pk;
   for (let i = 0; i < block.length; i++) { RING[ringPos] = block[i]; ringPos = (ringPos + 1) % RING.length; }
   ringFilled = Math.min(RING.length, ringFilled + block.length);
 }
@@ -1204,8 +1228,33 @@ function drawFlow() {
 
 /* ===================== Loop and controls ===================== */
 let needsDraw = true;
+const CLIP_SHOW_MS = 2500;
+function dbPos(a) { const db = a > 1e-6 ? 20 * Math.log10(a) : -120; return Math.max(0, Math.min(1, (db + 60) / 60)); }
+function updateMeter(now) {
+  const dt = Math.min(0.1, (now - (meter.last || now)) / 1000); meter.last = now;
+  const live = state.running && !state.held;
+  if (!live) meter.peak = 0;
+  // the bar falls back at 24 dB per second; a marker holds the highest peak for 1.5 s
+  const shown = meter.shown || 0;
+  let target = meter.peak; meter.peak = 0;
+  meter.shown = Math.max(target, shown * Math.pow(10, -24 * dt / 20));
+  if (target >= meter.hold || now - meter.holdT > 1500) { meter.hold = target; meter.holdT = now; }
+  const p = dbPos(meter.shown), h = dbPos(meter.hold);
+  const fill = $("m-fill"); fill.style.width = (p * 100).toFixed(1) + "%"; fill.style.setProperty("--mw", p > 0 ? (100 / p).toFixed(1) + "%" : "100%");
+  const hm = $("m-hold"); hm.style.left = (h * 100).toFixed(1) + "%"; hm.style.opacity = live && meter.hold > 0.001 ? 0.7 : 0;
+  const clipping = live && now - meter.clipT < CLIP_SHOW_MS;
+  $("m-clip").hidden = !clipping;
+  const note = $("clip-note");
+  if (clipping) {
+    note.textContent = state.src === "file"
+      ? "This recording reaches the top of its range, so some peaks are flattened. The readings may be less accurate. A recording made a little further from the mic, or with the input turned down, will read better."
+      : "The sound is reaching the top of the mic's range, so some peaks are flattened, and the readings get less accurate. Back away from the mic a little, or turn the input level down on your mic, interface or computer.";
+  }
+  note.hidden = !clipping;
+}
 function loop(now) {
   tick(now);
+  updateMeter(now);
   if (needsDraw || (state.running && !state.held)) {
     updateReadout(); drawStaff(); drawKeyboard(); drawTrail(); if ($("flow-panel").open) drawFlow();
     needsDraw = false;
