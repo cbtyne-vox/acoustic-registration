@@ -139,7 +139,7 @@ details .field { margin-top: 8px; }
 .bigwrap { display: flex; flex-direction: column; gap: 6px; }
 .big { font-size: 40px; padding: 8px 26px; letter-spacing: -0.01em; }
 .big.stale { opacity: 0.45; }
-#border-note { font-size: 13.5px; color: var(--muted); min-height: 1.3em; }
+#border-note { font-size: 13.5px; color: var(--muted); line-height: 1.45; min-height: 1.45em; }
 .now .readout { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 700px) { .now .readout { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 #trail { height: 260px; }
@@ -168,8 +168,15 @@ details.panel[open] > summary { margin-bottom: 12px; }
 .meter .mhold { position: absolute; top: -2px; bottom: -2px; width: 2px; left: 0; background: var(--text, #222); opacity: 0; }
 .meter .mtick { position: absolute; top: 16px; transform: translateX(-50%); font-size: 10px; color: var(--muted); font-family: var(--font-mono, monospace); }
 .meter .mclip { font-size: 12px; font-weight: 600; color: #fff; background: #d64545; border-radius: 10px; padding: 2px 9px; }
-.clipwarn { border-color: #d64545; }
 @media (max-width: 500px) { .meter .mtick.m6 { display: none; } }
+/* one message line under the meter with its space always kept, so nothing below it jumps */
+.msg { font-size: 13px; line-height: 1.4; min-height: 2.8em; margin: 4px 0 0; padding-left: 10px; border-left: 4px solid transparent; color: var(--muted); }
+.msg.clip { border-left-color: #d64545; color: var(--text, inherit); }
+.msg.hi { border-left-color: var(--over); color: var(--text, inherit); }
+@media (max-width: 700px) { .msg { min-height: 5.6em; } }
+#status { min-height: 2.8em; }
+#mic-dev { width: 100%; font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel, #fff); color: inherit; margin: 4px 0 2px; }
+#mic-hint:empty { display: none; }
 </style>
 </head>
 <body>
@@ -202,10 +209,9 @@ details.panel[open] > summary { margin-bottom: 12px; }
         <span class="mtick m6" style="left: 90%">−6</span>
         <span class="mtick" style="left: 100%">0</span>
       </div>
-      <span class="mclip" id="m-clip" hidden>Clipping</span>
+      <span class="mclip" id="m-clip" style="visibility: hidden">Clipping</span>
     </div>
-    <p class="warn clipwarn" id="clip-note" role="alert" hidden></p>
-    <p class="warn" id="hi-note" hidden>At this pitch, fR1 can't be measured reliably, by hand or by computer. The harmonics are too far apart to show where the resonance is, so the reading tends to land on a harmonic. Treat the label as a guess.</p>
+    <p class="msg" id="msg" aria-live="polite"></p>
   </section>
 
   <div class="main">
@@ -274,6 +280,9 @@ details.panel[open] > summary { margin-bottom: 12px; }
         </div>
       </div>
       <div id="mic-ctl" class="field">
+        <label class="lab" for="mic-dev">Microphone</label>
+        <select id="mic-dev" aria-label="Choose which microphone to use"><option value="">Default microphone</option></select>
+        <p class="note" id="mic-hint"></p>
         <p class="note">Sing about a hand's width from the mic. The browser's echo cancelling, noise suppression and auto level are switched off, since they change the sound. Use headphones if anything is playing.</p>
       </div>
       <div id="file-ctl" class="field" hidden>
@@ -861,7 +870,17 @@ async function startSource() {
   ringFilled = 0;
   if (state.src === "mic") {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("nomic");
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+    const want = $("mic-dev").value;
+    const audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: want ? Object.assign({ deviceId: { exact: want } }, audio) : audio });
+    } catch (err) {
+      if (!want || (err.name !== "OverconstrainedError" && err.name !== "NotFoundError")) throw err;
+      micStream = await navigator.mediaDevices.getUserMedia({ audio });   // that mic is gone; use the default
+      micNote = "That microphone isn't connected right now, so the default one is in use.";
+    }
+    const tr = micStream.getAudioTracks()[0];
+    await listMics(tr && tr.getSettings ? tr.getSettings().deviceId : "");
     srcNode = ctx.createMediaStreamSource(micStream);
     srcNode.connect(capture);
   } else {
@@ -871,6 +890,46 @@ async function startSource() {
     srcNode.start();
   }
 }
+/* ---------- choosing the microphone ---------- */
+const MIC_KEY = "arl-mic";
+let micNote = "";
+// remembered by id, and by name too, since some browsers give a mic a new id on each visit
+function savedMic() { try { return JSON.parse(localStorage.getItem(MIC_KEY) || "{}"); } catch (e) { return {}; } }
+async function listMics(inUse) {
+  const sel = $("mic-dev"), hint = $("mic-hint");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) { sel.hidden = true; return; }
+  let devs = [];
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput"); } catch (e) {}
+  const named = devs.some((d) => d.label);
+  const def = devs.find((d) => d.deviceId === "default");
+  const real = devs.filter((d) => d.deviceId && d.deviceId !== "default" && d.deviceId !== "communications");
+  const saved = savedMic();
+  let keep = inUse || sel.value || saved.id || "";
+  if (!inUse && !sel.value && saved.label && !real.some((d) => d.deviceId === keep)) {
+    const byName = real.find((d) => d.label === saved.label); if (byName) keep = byName.deviceId;
+  }
+  sel.innerHTML = "";
+  const o0 = document.createElement("option"); o0.value = "";
+  o0.textContent = def && def.label ? def.label.replace(/^Default - /, "Default: ") : "Default microphone";
+  sel.appendChild(o0);
+  real.forEach((d, i) => { const o = document.createElement("option"); o.value = d.deviceId; o.textContent = d.label || "Microphone " + (i + 1); sel.appendChild(o); });
+  if (keep && real.some((d) => d.deviceId === keep)) sel.value = keep;
+  // if the browser picked the default and that matches a named mic, show that mic by name
+  else if (inUse && def && def.groupId) { const m = real.find((d) => d.groupId === def.groupId); if (m) sel.value = m.deviceId; }
+  hint.textContent = micNote || (!named && real.length !== 1 ? "The names of your microphones show here once you press Start and allow the mic." : "");
+  micNote = "";
+}
+$("mic-dev").addEventListener("change", async () => {
+  const sel = $("mic-dev"), opt = sel.options[sel.selectedIndex];
+  try { localStorage.setItem(MIC_KEY, JSON.stringify(sel.value ? { id: sel.value, label: opt ? opt.textContent : "" } : {})); } catch (e) {}
+  if (state.running && state.src === "mic") {
+    try { await startSource(); statusEl.textContent = "Listening. Sing a steady vowel."; }
+    catch (e) { setRunning(false); statusEl.textContent = "That microphone couldn't be opened. Choose another one and press Start."; }
+  }
+});
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener("devicechange", () => listMics());
+listMics();
+
 const statusEl = $("status"), goBtn = $("go");
 async function setRunning(on) {
   if (on) {
@@ -902,9 +961,8 @@ function onResult(r) {
   const lvl = 20 * Math.log10((r.level || 0) + 1e-9);
   if (r.error) { statusEl.textContent = "Analysis error: " + r.error; return; }
   if (!r.level || lvl < -50) { statusEl.textContent = "Too quiet. Move closer or sing a little louder."; markStale(); return; }
-  if (r.level > 0.98) statusEl.textContent = "Clipping. Back off the mic or turn the input down.";
-  if (!r.f0 || r.conf < 0.6 || !r.fr) { if (r.level <= 0.98) statusEl.textContent = "Listening for a steady pitch…"; recentF1 = []; markStale(); return; }
-  if (r.level <= 0.98) statusEl.textContent = "";
+  if (!r.f0 || r.conf < 0.6 || !r.fr) { statusEl.textContent = "Listening for a steady pitch…"; recentF1 = []; markStale(); return; }
+  statusEl.textContent = "Listening.";
   // a sudden jump of more than half an octave is checked against the next reading before it is believed
   if (cur && !cur.stale && Math.abs(midiOf(r.f0) - midiOf(cur.f0)) > 6.5) {
     if (!pendingJump || Math.abs(midiOf(r.f0) - midiOf(pendingJump)) > 1) { pendingJump = r.f0; return; }
@@ -940,7 +998,7 @@ function updateReadout() {
     lab.className = "pill big none"; lab.textContent = "–";
     ["r-f0", "r-f1", "r-ratio", "r-h2"].forEach((id) => { $(id).textContent = "–"; });
     ["r-f0hz", "r-f1hz", "r-h2hz"].forEach((id) => { $(id).innerHTML = "&nbsp;"; });
-    $("border-note").textContent = ""; $("hi-note").hidden = true;
+    $("border-note").textContent = ""; state.hiNote = false;
     return;
   }
   lab.className = "pill big " + cur.cls + (cur.stale ? " stale" : "");
@@ -951,7 +1009,7 @@ function updateReadout() {
   $("r-h2").textContent = noteRound(2 * cur.f0); $("r-h2hz").textContent = Math.round(2 * cur.f0) + " Hz";
   const nl = nearLine(cur.f1, cur.f0);
   $("border-note").textContent = cur.stale ? "Last steady reading" : nl ? "Near the line between " + LABEL_NAME[nl.lo] + " and " + LABEL_NAME[nl.hi] : "";
-  $("hi-note").hidden = !(cur.f0 >= 500);
+  state.hiNote = cur.f0 >= 500;
 }
 
 /* ===================== Keyboard ===================== */
@@ -1243,14 +1301,23 @@ function updateMeter(now) {
   const fill = $("m-fill"); fill.style.width = (p * 100).toFixed(1) + "%"; fill.style.setProperty("--mw", p > 0 ? (100 / p).toFixed(1) + "%" : "100%");
   const hm = $("m-hold"); hm.style.left = (h * 100).toFixed(1) + "%"; hm.style.opacity = live && meter.hold > 0.001 ? 0.7 : 0;
   const clipping = live && now - meter.clipT < CLIP_SHOW_MS;
-  $("m-clip").hidden = !clipping;
-  const note = $("clip-note");
+  $("m-clip").style.visibility = clipping ? "visible" : "hidden";
+  // one message slot, its space always kept: clipping first, then the high-pitch note, then a quiet hint
+  const msg = $("msg");
+  let txt = "", cls = "msg";
   if (clipping) {
-    note.textContent = state.src === "file"
-      ? "This recording reaches the top of its range, so some peaks are flattened. The readings may be less accurate. A recording made a little further from the mic, or with the input turned down, will read better."
-      : "The sound is reaching the top of the mic's range, so some peaks are flattened, and the readings get less accurate. Back away from the mic a little, or turn the input level down on your mic, interface or computer.";
+    cls = "msg clip";
+    txt = state.src === "file"
+      ? "Clipping: this recording reaches the top of its range, so some peaks are flattened and the readings may be less accurate."
+      : "Clipping: the loudest peaks are being flattened, which makes the readings less accurate. Back away from the mic a little, or turn the input down on your mic or interface.";
+  } else if (live && state.hiNote) {
+    cls = "msg hi";
+    txt = "Above about C5, fR1 can't be measured reliably, by hand or by computer: the harmonics are too far apart. Treat the label as a guess.";
+  } else if (live) {
+    txt = "Keep your loudest notes out of the red.";
   }
-  note.hidden = !clipping;
+  if (msg.textContent !== txt) msg.textContent = txt;
+  if (msg.className !== cls) msg.className = cls;
 }
 function loop(now) {
   tick(now);
